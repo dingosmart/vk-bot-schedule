@@ -1,19 +1,45 @@
 <?php
 
+/*
+
+KEYBOARD TEMPLATE FOR FUTURE
+
+$keyboard = [
+           "one_time" => false,
+           "buttons" => [[
+
+               ["action" => [
+                 "type" => "text",
+                 "payload" => "{\"button\": \"1\"}",
+                 "label" => "first button",
+                ],
+                "color" => "default",
+                ],
+               ],
+
+               [["action" => [
+                 "type" => "text",
+                 "payload" => "{\"button\": \"2\"}",
+                 "label" => "second button",
+                ],
+                "color" => "primary",
+                ],
+                ]
+
+               ],
+         ];  
+
+*/
+
 ini_set('date.timezone', 'Europe/Samara');
 
-if (!isset($_REQUEST)) {
+if (!isset($_REQUEST) && !isset($_POST['function'])) {
     return;
 }
 
-//
-//if (isset($_GET['secret']) && !isset($_COOKIE['auth'])){
-//    echo "error";
-//}
-
 // load config
 
-require 'config.php';
+require 'beta_config.php';
 
 $config = new config();
 
@@ -24,22 +50,24 @@ $token = $config->vk_bot['token'];
 // Secret key
 $secretKey = $config->vk_bot['secret'];
 
-global $db_host, $db_name, $db_username, $db_password;
+global $db_host, $db_name, $db_username, $db_password, $user_id;
 
 $db_host = $config->db['host'];
 $db_name = $config->db['table'];
 $db_username = $config->db['user'];
 $db_password = $config->db['password'];
 
+// small "API" for sending messages from interface
+
 if ((isset($_GET['send'])) && isset($_GET['groupsCount'])){
      
      $ids = array();
      
     // получаем подписчиков
-    $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Не могу подключиться:" . mysql_error());
+    $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Unable to connect, donut:" . mysql_error());
     // Подключение к DB
     mysql_select_db($db_name, $connect_to_db)
-    or die("Не могу выбрать базу данных:" . mysql_error());
+    or die("Unable to picky-pick database, swetie:" . mysql_error());
     mysql_query("SET NAMES utf8");
     
     
@@ -63,14 +91,14 @@ if ((isset($_GET['send'])) && isset($_GET['groupsCount'])){
 
     if ($empty){
         
-        die("@token_error");
+        die("@token_error"); // die if token wrong
 
     }
     
     // Делаем SQL
-	$sql = "SELECT * FROM vk_bot_users WHERE status='subscribed'";
+	$sql = "SELECT * FROM vk_bot_users WHERE (status='subscribed' OR status='subscribing')";
 
-    if ($_GET['groupsCount'] > 0){
+    if ($_GET['groupsCount'] > 0 && $_GET['groupsCount'] != "all"){
     
         $sql .= " AND ((";
         
@@ -89,8 +117,6 @@ if ((isset($_GET['send'])) && isset($_GET['groupsCount'])){
         $sql .= ")";
     
     }
-        
-    //    $sql .= " AND (studgroup='Д1СП1')";
     
     if($_GET['teachers'] == "true"){
         
@@ -98,8 +124,20 @@ if ((isset($_GET['send'])) && isset($_GET['groupsCount'])){
         
     }
     
-    $sql .= ")";
+    if ($_GET['groupsCount'] != 'all')    
+        $sql .= ")";
     
+    if ($_GET['groupsCount'] == "zaoch"){
+        $sql = "SELECT * FROM vk_bot_users WHERE (status='subscribed' OR status='subscribing') AND studgroup LIKE 'З%'";
+    }
+    
+    if ($_GET['groupsCount'] == 'och'){
+        $sql = "SELECT * FROM vk_bot_users WHERE (status='subscribed' OR status='subscribing') studgroup NOT LIKE 'З%'";
+    }
+    
+//    $sql = "SELECT * FROM vk_bot_users WHERE VK_ID='156152406'";
+    
+//    echo $sql;
     
     $results = mysql_query($sql)
         or die(mysql_error());
@@ -110,32 +148,39 @@ if ((isset($_GET['send'])) && isset($_GET['groupsCount'])){
         $ids[$i] = $data["VK_ID"];
         $i++;
     }
-          
-//     for($i = 0; $i < count($ids); $i++){
-//     
-//     //затем с помощью users.get получаем данные об авторе
-//        $userInfo = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$ids[$i]}&v=5.0&access_token=" . $token));
-////        print_r($userInfo);
-//        //и извлекаем из ответа его имя
-//        $user_name = $userInfo->response[0]->first_name;
-//        
-//     if (isset($_GET['text']) && $_GET['text'] != ""){
-//         $message = $_GET['text'];
-//     }else{
-//        $message = "Привет, " . $user_name . "! Новое расписание!";
-//     }
-//     //С помощью messages.send и токена сообщества отправляем ответное сообщение
-//        $request_params = array(
-//            'message' => "$message",
-//            'user_id' => $ids[$i],
-//            'access_token' => $token,
-//            'read_state' => 1,
-//            'v' => '5.0'
-//        );
-//        $get_params = http_build_query($request_params);
-//        file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);
-//     }
-    
+
+     for($i = 0; $i < count($ids); $i++){
+     
+     //затем с помощью users.get получаем данные об авторе
+        $userInfo = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$ids[$i]}&v=5.0&access_token=" . $token));
+        //и извлекаем из ответа его имя
+        $userInfo = $userInfo->response[0];
+        
+     if (isset($_POST['text']) && $_POST['text'] != ""){
+         $message = str_replace(
+             array( // what need to replace
+                        "@USERNAME",
+                        "@LASTNAME",
+                      ), 
+             array( // what place instead
+                        $userInfo->first_name,
+                        $userInfo->last_name,
+                       ), $_POST['text']);
+     }else{
+        $message = "Привет, " . $userInfo->first_name . "! Новое расписание!";
+     }
+     //С помощью messages.send и токена сообщества отправляем ответное сообщение
+        $request_params = array(
+            'message' => "$message",
+            'user_id' => $ids[$i],
+            'access_token' => $token,
+            'read_state' => 1,
+            'v' => '5.0'
+        );
+        $get_params = http_build_query($request_params);
+
+        file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);
+     }
     echo 'ok';
     
 }
@@ -171,7 +216,7 @@ if (isset($_GET['getInfo']) && isset($_POST['id']) && isset($_POST['token'])){
     
 }
 
-if (isset($_REQUEST)){    
+if (isset($_REQUEST) && !isset($_POST['function'])){    
     
 //Получаем и декодируем уведомление
 $data = json_decode(file_get_contents('php://input'));
@@ -187,8 +232,16 @@ switch ($data->type) {
         break;
     //Если это уведомление о новом сообщении...
     case 'message_new':
+        $chat_id = "false";
+        
+        if ($data->object->peer_id > 2000000000){
+            
+            $chat_id = $data->object->peer_id - 2000000000;
+            
+        }
+        
         //...получаем id его автора
-        $userId = $data->object->user_id;
+        $userId = $data->object->from_id;
         //затем с помощью users.get получаем данные об авторе
         $userInfo = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$userId}&v=5.0&access_token=" . $token));
 //        print_r($userInfo);
@@ -196,9 +249,10 @@ switch ($data->type) {
         //и извлекаем из ответа его имя
         $user_name = $userInfo->response[0]->first_name;
         
-        // если впервые пишет        
-        global $db_host, $db_name, $db_username, $db_password;
+        // если впервые пишет
+        global $db_host, $db_name, $db_username, $db_password, $user_id;
 
+        $user_id = $userId;
 
         $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Не могу подключиться:" . mysql_error());
         // Подключение к DB
@@ -220,27 +274,14 @@ switch ($data->type) {
             }        
         
         // Читаем сообщение и записываем
-        $message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($data->object->body));
-        $_message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($data->object->body));
+        $message = $_message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($data->object->text));
         
         if ($unknown_user){
             
-        $firstUse = getHelpMessage(true, $user_name);
+        sendMessages($userId, getFirstMessage($user_name));
         
-        sendAnalytics("firstUseMessage", $userId, $_message);
+        sendAnalytics("firstUseMessage", $userId, $_message, $chat_id);
             
-        for($_i = 0; $_i < count($firstUse); $_i++){
-        //С помощью messages.send и токена сообщества отправляем ответное сообщение
-        $request_params = array(
-            'message' => $firstUse[$_i],
-            'user_id' => $userId,
-            'access_token' => $token,
-            'read_state' => 1,
-            'v' => '5.0'
-        );
-        $get_params = http_build_query($request_params);
-        file_get_contents('https://api.vk.com/method/messages.send?' . $get_params); 
-        }
         $sql = "INSERT INTO vk_bot_known_users (VK_ID) VALUES ('" . $userId . "');";
         
         mysql_query($sql)
@@ -249,88 +290,108 @@ switch ($data->type) {
         }        
         // Анализируем и составляем ответ
 		$attachment = $data->object->attachments[0]->type;
-		$fwd_messages = $data->object->fwd_messages;
+        
+        $fwd_messages = $data->object->fwd_messages;
+        
+        
 		if ($attachment){
-		$answer = getAnswer("", "", $userId, $user_name, $attachment);
-		}else if ($fwd_messages){
             
-            $fwd = are_ownFwdMsg($fwd_messages, $userId);
-            
-            if (!$fwd){
-		          
-                $answer = getAnswer("", "", $userId, $user_name, "fwd_messages");
-            
-            }else if ($fwd == -1){
-                
-                $fwd_messages = json_decode(json_encode($fwd_messages), true);
-                
-                $message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($fwd_messages[0]['body']));
-                $_message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($fwd_messages[0]['body']));
-                
-                $answer = getAnswer($message, $_message, $userId, $user_name, false);
-                
-            }else{
-                
-                $fwd_messages = json_decode(json_encode($fwd_messages), true);
-                
-                for ($i = 0; $i < $fwd; $i++){
-                    
-                    $fwd_messages = $fwd_messages[0]['fwd_messages'];
-                    
+            $answer = getAnswer("", "", $userId, $user_name, $attachment, $chat_id);
+
+            }else if ($fwd_messages){
+
+                $fwd = are_ownFwdMsg($fwd_messages, $userId);
+
+                if (!$fwd){
+
+                    $answer = getAnswer("", "", $userId, $user_name, "fwd_messages", $chat_id);
+
+                }else if ($fwd == -1){
+
+                    $fwd_messages = json_decode(json_encode($fwd_messages), true);
+
+                    $message = $_message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($fwd_messages[0]['text']));
+
+                    $answer = getAnswer($message, $_message, $userId, $user_name, false, $chat_id);
+
+                }else{
+
+                    $fwd_messages = json_decode(json_encode($fwd_messages), true);
+
+                    for ($i = 0; $i < $fwd; $i++){
+
+                        $fwd_messages = $fwd_messages[0]['fwd_messages'];
+
+                    }
+
+                    $message = $_message = str_replace(array("?", "!", ".", ",", ")", "("), "", mb_strtolower($fwd_messages[0]['text']));
+
+                    $answer = getAnswer($message, $_message, $userId, $user_name, false, $chat_id);
+
                 }
-                
-                $message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($fwd_messages[0]['body']));
-                $_message = str_replace(array("?", "!", ".", ","), "", mb_strtolower($fwd_messages[0]['body']));
-                
-                $answer = getAnswer($message, $_message, $userId, $user_name, false);
-                
-            }
         
         }else{
             
-            $answer = getAnswer($message, $_message, $userId, $user_name, false);
+            $answer = getAnswer($message, $_message, $userId, $user_name, false, $chat_id);
             
 		}
         
         
-         $keyboard = [
-           "one_time" => false,
-           "buttons" => [[
+//         $keyboard = [
+//           "one_time" => false,
+//           "buttons" => [[
+//
+//               ["action" => [
+//                 "type" => "text",
+//                 "payload" => "{\"button\": \"1\"}",
+//                 "label" => "first button",
+//                ],
+//                "color" => "default",
+//                ],
+//               ],
+//
+//               [["action" => [
+//                 "type" => "text",
+//                 "payload" => "{\"button\": \"2\"}",
+//                 "label" => "second button",
+//                ],
+//                "color" => "primary",
+//                ],
+//                ]
+//
+//               ],
+//         ];        
 
-               ["action" => [
-                 "type" => "text",
-                 "payload" => "{\"button\": \"1\"}",
-                 "label" => "first button",
-                ],
-                "color" => "default",
-                ],
-               ],
-
-               [["action" => [
-                 "type" => "text",
-                 "payload" => "{\"button\": \"2\"}",
-                 "label" => "second button",
-                ],
-                "color" => "primary",
-                ],
-                ]
-
-               ],
-         ];        
-        
+        if ($answer == "" || $answer == null)
+            $answer = getAnswers($user_name)['default'][rand(0, count(getAnswers($user_name)))];
+                
         //С помощью messages.send и токена сообщества отправляем ответное сообщение
         $request_params = array(
 //            'message' => "{$user_name}, это неизвестная команда.",
             'message' => "{$answer}",
-//            'random_id' => mt_rand(15, 5000),
-            'user_id' => $userId,
+            'user_id' => $data->object->from_id,
+            'random_id' => mt_rand(15, 200000),
             'access_token' => $token,
             'read_state' => 1,
-            'keyboard' => json_encode($keyboard),
-            'v' => '5.78'
+//            'keyboard' => json_encode($keyboard),
+            'v' => '5.84'
         );
+        
+        if ($chat_id != "false"){
+            
+            $request_params['chat_id'] = $chat_id;
+            unset($request_params['user_id']);
+               
+        }
+        
         $get_params = http_build_query($request_params);
-        file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);
+                
+        if ($answer != "@@@NOT_FOR_BOT_ERR")
+            $result = file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);
+        
+        if ($chat_id == "false")
+        saveToLog($userId, $chat_id, $message, $answer, $result);
+        
         //Возвращаем "ok" серверу Callback API
 //        header("HTTP/1.1 200 OK");
         echo('ok');
@@ -344,13 +405,14 @@ switch ($data->type) {
     
 }
 
+
 function are_ownFwdMsg($fwd, $userId){
     
     $count = 0;
     
     $fwd = json_decode(json_encode($fwd), true);
         
-    if ($fwd[0]['user_id'] == $userId && !$fwd[0]['fwd_messages']){
+    if ($fwd[0]['from_id'] == $userId && !$fwd[0]['fwd_messages']){
         
         return -1;
         
@@ -358,7 +420,7 @@ function are_ownFwdMsg($fwd, $userId){
     
     while ($fwd[0]['fwd_messages']){
         
-        if ($fwd[0]['user_id'] != $userId){
+        if ($fwd[0]['from_id'] != $userId){
             return false;
         }
         
@@ -369,7 +431,7 @@ function are_ownFwdMsg($fwd, $userId){
     
 //        echo $count . ' - '; print_r($fwd);
     
-    if ($fwd[0]['user_id'] == $userId){
+    if ($fwd[0]['from_id'] == $userId){
         return $count;
     }
     
@@ -377,47 +439,9 @@ function are_ownFwdMsg($fwd, $userId){
     
 }
 
-function getHelpMessage($is_hello, $username){
-    
-    $hello = '';
-    
-    if ($is_hello){
-        
-        $hello = '';
-        
-    }
-    
-    $splitter = '&#10071;';
-    
-    $message = ['Привет, ' . $username . '! Я бот Жигулёвского Государственного Колледжа! Я нахожусь в процессе альфа-тестирования. Я создан, чтобы у тебя всегда была возможность спросить у меня изменения в расписании!
-    Я стараюсь самообучаться, поэтому ты можешь пробовать общаться со мной более-менее свободно, но у меня, как и у Вас, людей, иногда саморазвитие выходит не очень хорошо, поэтому вот основные функции, которыми я обладаю:'
-                 ,
-
-    '' . $splitter . '1. Подписка на уведомления об изменениях - как только я узнаю изменения в расписании, я могу написать тебе об этом, если ты заранее попросишь. Сделать это очень легко, достаточно написать мне что-то вроде: 
-    "Подпиши меня на уведомления!", а затем, сказать мне свою группу. Впрочем, тебе ничего не мешает сразу написать мне "Подпиши меня на уведомления Д4ПО1!" (заменить на название своей группы). В таком случае, я сразу всё пойму.
-    ' . $splitter . '2. Расписание на вчера/сегодня/завтра/послезавтра - я могу быстро сказать тебе расписание на вчерашний, сегодняшний, либо завтрашний день. 
-    Для этого нужно всего лишь написать что-то вроде "Пары вчера", либо "Расписание", либо "Какие завтра пары, приятель?". Ну, если не хотите, то можно и без "приятеля".'
-                 , 
-    '' . $splitter . '3. Расписание для учителей - все Ваши пары на вчера/сегодня/завтра(см. 2 пункт) с помощью команды в духе "пары у Иванова"
-    ' . $splitter . '4. Подписка на уведомления для учителей - как только я узнаю изменения в расписании, я могу написать Вам об этом, если Вы заранее попросите. Сделать это очень легко, достаточно написать мне что-то вроде: 
-    "Подпиши меня на уведомления!", а затем, сказать мне свою фамилию. Впрочем, Вам ничего не мешает сразу написать мне "Подпиши меня - Иванов!" (заменить на свою фамилию). В таком случае, я сразу всё пойму.',
-                
-    '' . $splitter . '5. Сменить группу, либо фамилию, если Вы ошиблись с вводом можно просто написав что-то в духе "Смени группу Д1Т1", либо "Обнови фамилию - Иванов"
-    ' . $splitter . '6. Узнать какая сейчас пара, а также получить расписание звонков, можно с помощью одной из вариаций команды "расписание звонков", "какая сейчас пара" и прочими.',
-    
-    '' . $splitter . '7. Отправить разработчику отзыв/пожелание/предложение - с помощью команды "Отправь разработчику". Пример: "Отправь разработчику: я хочу новую функцию, которая бы готовила яичницу.',
-                
-    'Пока что, это всё, что я могу, однако, помни, что чем больше ты со мной общаешься, тем умнее я становлюсь!
-    Надеюсь, я смогу быть тебе полезен, ' . $username . '! :)',
-                ];
-    
-    return $message;
-    
-}
-
 $analytics_sent = false;
 
-function sendAnalytics($type, $VK_ID, $message){
+function sendAnalytics($type, $VK_ID, $message, $is_chat){
     
     if ($VK_ID != '156152406'){ // dev id
     
@@ -425,7 +449,7 @@ function sendAnalytics($type, $VK_ID, $message){
 
         if (!$analytics_sent){
 
-            $sql = "INSERT INTO vk_bot_analytics (type, VK_ID, message) VALUES ('" . $type . "', '" . $VK_ID . "', '" . $message . "')";
+            $sql = "INSERT INTO vk_bot_analytics (type, VK_ID, message, chat_id) VALUES ('" . $type . "', '" . $VK_ID . "', '" . $message . "', '" . $chat_id . "')";
 
             global $db_host, $db_name, $db_username, $db_password;
 
@@ -443,6 +467,25 @@ function sendAnalytics($type, $VK_ID, $message){
 
         }
     }
+    
+}
+
+function saveToLog($VK_ID, $chat_id, $message, $answer, $result){
+    
+
+            $sql = "INSERT INTO vk_bot_log (VK_ID, chat_id, message, answer, result) VALUES ('" . $VK_ID . "', '" . $chat_id . "', '" . $message . "', '" . $answer . "', '" . $result . "')";
+
+            global $db_host, $db_name, $db_username, $db_password;
+
+            $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) 
+                or die("Не могу подключиться:" . mysql_error());
+            // Подключение к DB
+            mysql_select_db($db_name, $connect_to_db)
+            or die("Не могу выбрать базу данных:" . mysql_error());
+            mysql_query("SET NAMES utf8");
+
+            mysql_query($sql)
+                        or die(mysql_error());
     
 }
 
@@ -471,6 +514,14 @@ function getWords(){
                            "падла",
                            "мразь",
                            "урод",
+                           "щенок",
+                           "шкура",
+                           "чмо",
+                           "пидр",
+                           "тупой",
+                           "глупый",
+                           "сдохни",
+                           "хуйло",
                           ],
               "badlang" => ["блять",
                            "сука",
@@ -482,11 +533,25 @@ function getWords(){
                            "ебал",
                            "хуй",
                            "нахуй",
+                           "похуй",
                            "пизда",
                            "уебу",
                            "выебу",
                            "заебал",
                            "жопа",
+                           "пиздатый",
+                           "пиздатая",
+                           "пиздатое",
+                           "пиздато",
+                           "ёбу",
+                           "ебу",
+                           "ёбнулся",
+                           "ебать",
+                           "ебало",
+                           "пох",
+                           "уёбак",
+                           "уёбок",
+                           "отъебись",
                           ],
 			  "yes" => ["да",
                            "ага",
@@ -573,6 +638,13 @@ function getWords(){
               "unsubscribe" => ["отпиши",
                                 "отписаться",
                              ],
+              "chat" => [
+                        "беседа",
+                        "беседу",
+                        "беседы",
+                        "беседку",
+                        "чат",
+                        ],
 			  "changeGroup" => ["смени",
                                 "перезапиши",
                                 "обнови",
@@ -583,6 +655,7 @@ function getWords(){
                              "расписсания",
                              "пары",
                              "пара",
+                             "пар",
                              "изменения",
                              "изменение",
                              "tomorrow" => ["завтра",
@@ -616,6 +689,11 @@ function getWords(){
                            "званки",
                            "званков",
                             ],
+              
+              "1sept" => [
+                            "линейка",
+                            ],
+              
               "now" => [
                         "щас",
                         "сейчас",
@@ -649,18 +727,35 @@ function getAnswers($userName){
                             "Мне не приятно это слышать...",
                             "А что, если я обижусь?",
                             "Меня это расстроило. Честно.",
+                            "Не следует оскорблять меня. Впрочем, лучше вообще никого не оскорблять и жить в мире.",
+                            "Мир, мир, мир. Я не собираюсь с тобой ссориться. И даже обижаться не буду. Я же бот.",
+                            "Ну да, обзывай бота. Он же не знает оскорблений. Хотя знаю! Ты энергозависимый! Хм... Что есть, то есть.",
+                            "Обзывать бота, который не может обозвать в ответ. Не очень то уж и благородно.",
+                            "А я бы никогда тебя так не назвал!",
                             ],
                 "badlang" => ["Фу! И ты этим ртом ешь?",
                             "Какое плохое слово...",
                             "Мне не приятно это слышать...",
                             "А что, если я все так будут говорить?",
                             "Меня это расстроило. Честно.",
+                            "А какие хорошие слова ты знаешь? Я вот, например, знаю слова \"расписание\", \"звонки\" и \"подпиши\". Я же бот, сообщающий расписание, хах.",
+                            "Эти твои плохие словечки - не круто, чтобы ты там себе не выдумывал.",
+                            "Социализация - важный процесс. Ты вносишь деструктив в свою социализированность, подобными словами.",
+                            "Был бы кто-то, кому можно было бы пожаловаться на твоё поведение... Сразу бы эти словечки отставил.",
+                            "Пополняй свой лексикон более полезными словами, а эти лучше позабыть.",
+                            "Истинный джентельмен не использует бранные слова в обычном диалоге. Ты истинный джентельмен?",
                             ],
                 "hello" => ["Привет, {$userName}",
                             "И тебе привет, {$userName}",
-                            "Здравствуй!",
-                            "Доброе время суток!",
-                            "Хорошая погода, верно?",
+                            "Здравствуй, {$userName}!",
+                            "Доброе время суток, {$userName}!",
+                            "Хорошая погода, {$userName}, верно?",
+                            "Сегодня прекрасный день, не так ли, {$userName}?",
+                            "И тебе хорошего дня. Хотя, в общем-то, каждый день, когда ты можешь принести кому-то пользу, хорош. Ты согласен с этим, {$userName}?",
+                            "Не забываешь старину бота? Хе-хе... Здравствуй, {$userName}.",
+                            "Рад тебя видеть, {$userName}. Чем могу помочь сегодня?",
+                            "Приветик, {$userName}.",
+                            "Здравствуй, приятель.",
                             ],
 				"yes" => ["Ага.",
                             "Я тоже так думаю.",
@@ -668,12 +763,27 @@ function getAnswers($userName){
                             "Да",
                             "Ясно",
                             "Понятно",
+                            "Точно?",
+                            "Уверен?",
+                            "Нельзя быть в чём-то уверенным на сто процентов. Развивай критическое мышление. Может нет?",
+                            "Может нет?",
+                            "Кто знает, может быть и нет.",
+                            "Почему бы и нет?",
+                            "А почему да?",
                             ],
 				"no" => ["Почему нет?",
                             "Не говори нет, когда можно сказать \"да\"",
                             "А может да?",
                             "Может быть.",
                             "Кто знает... Может и нет.",
+                            "Вполне возможно, что да.",
+                            "Точно? Я бот, я не знаю. Но подумай, может да?",
+                            "Я предпочитаю говорить да. Хотя может и нет.",
+                            "Нет - это слово из трёх букв. А да - из двух. Сам решай, что лучше.",
+                            "Хочешь нет - пусть будет нет.",
+                            "Кто знает, может быть не нет?",
+                            "Не нет.",
+                            "Да.",
 						 ],
 				"changeGroup" => ["Если хочешь сменить группу, напиши что-нибудь вроде \"Смени мне группу на Д2ДО1\"",
                             "Я не знаю что.",
@@ -722,6 +832,11 @@ function getAnswers($userName){
                             "И снова напоминаю, что я бот. Я не умею просматривать документы.",
                             "Что это? Меня не учили, как с этим обращаться.",
                             ],
+                "voice" => [
+                            "Прости, не умею эти голосовые сообщения понимать. Может, когда-нибудь, Алиса меня научит.",
+                            "Когда-нибудь Сири меня научит их понимать",
+                            "Кортана всё ещё не может понимать русский голос. Я не настолько круче неё, чтобы начать понимать это раньше неё.",
+                            ],
 				"fwd_messages" => ["А человек, чьи сообщения ты пересылаешь, вкурсе об этом? Если нет, то это плохо - так нельзя.",
                             "Я не читаю чужие переписки, извини",
                             "У каждого человека есть право на тайну личной переписки. Интересно, а может ли это относится ко мне?",
@@ -743,7 +858,17 @@ function getAnswers($userName){
                              ],
 				"subscribed" => ["Вы успешно подписаны на уведомления о расписании! Чтобы отписаться, просто напишите мне что-то вроде \"Отпиши, пожалуйста!\".",
                             "{$userName}, теперь ты подписан на уведомления о расписании! Если захочешь отписаться - просто попроси :)",
+                            "Подписал тебя, {$userName}. Теперь будешь получать сообщения от меня, сразу как расписание будет появляться. Кроме того, теперь можешь просто писать мне ключевое слово \"пары\"",
                              ],
+                "schedule" => [
+                        "new" => [
+                            "Прошу просить и жаловать! Новое расписание!",  
+                            "Новое расписание в студию!",  
+                            "Братишки, я Вам новое расписание принёс!",  
+                            "Новое расписание для Вас!",  
+                            "А вот и оно! С пылу, с жару! Новое расписание!",  
+                        ],
+                            ],
                 "default" => ["Я не понимаю тебя...",
                               "Я не знаю о чём ты... Попробуй переформулировать",
                               "Я бот. Я не понимаю что это означает... Никто несовершенен",
@@ -767,13 +892,129 @@ function getAnswers($userName){
     
 }
 
+function tryParseDate($message, $src){
+    
+    $months = [
+            "01" => [
+                "январь",
+                "января",
+            ],
+            "02" => [
+                "февраль",
+                "февраля",
+            ],
+            "03" => [
+                "март",
+                "марта",
+            ],
+            "04" => [
+                "апрель",
+                "апреля",
+            ],
+            "05" => [
+                "май",
+                "мая",
+            ],
+            "06" => [
+                "июнь",
+                "июня",
+            ],
+            "07" => [
+                "июль",
+                "июля",
+            ],
+            "08" => [
+                "август",
+                "августа",
+            ],
+            "09" => [
+                "сентября",
+                "синтября",
+                "синтрября",
+                "сентябрь",
+            ],
+            "10" => [
+              "октябрь",  
+              "октября",  
+            ],
+            "11" => [
+              "ноябрь",  
+              "ноября",  
+            ],
+            "12" => [
+                "декабрь",
+                "декабря",
+            ],
+        ];
+    
+    $day = NULL; $month = NULL;
+        
+    foreach ($months as $m){ // for each month of months. WTF I just commented...
+        
+        foreach ($m as $_m){ // for each variable of month
+        
+            if (in_array($_m, $message))
+                $month = array_search($m, $months);
+
+        }
+    }
+    
+    $fmt = new NumberFormatter('ru_RU', NumberFormatter::DECIMAL);
+    
+    foreach ($message as $m){
+        
+        $result = numfmt_parse($fmt, $m, NumberFormatter::TYPE_INT32);
+        
+        if ($result != false && $result > 0 && $result < 32){
+            
+            if ($result < 10)
+                $result = 0 . $result;
+            
+            $day = $result;
+            break;
+            
+        }        
+    }
+    
+    if (isset($day) && isset($month)){
+        // shows how function works;
+//        echo date("Y") . '-' . $month . '-' . $day; 
+        return date("Y") . '-' . $month . '-' . $day;
+    }
+    
+    return $src;
+    
+}
+
 function getAnswer($message, $_message, $userId, $userName, $is_attachment){
     
-    global $db_host, $db_name, $db_username, $db_password;
+    global $db_host, $db_name, $db_username, $db_password, $chat_id;
     
     $Answers = getAnswers($userName);
     
     $Words = getWords();
+    
+//    print_r($Words["teachers"]);
+    
+    $message = explode(" ", $message, 50);
+    
+    $is_to_bot = false;
+        
+    if ($chat_id != "false"){
+        
+        foreach ($message as $m){
+
+            if (mb_strtolower($m) == "бот" || strpos($m, "club155349353") || strpos($m, "public167772805")){
+                $is_to_bot = true;
+                break;
+            }
+
+        }
+        
+    }
+    
+    if (!$is_to_bot && $chat_id != "false")
+        return "@@@NOT_FOR_BOT_ERR";
     
     $scheduleDate = "today";
 	
@@ -782,37 +1023,40 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
 		switch ($is_attachment){
                 
 			case "photo":
-                sendAnalytics("photoMessage", $userId, '@photo');
+                sendAnalytics("photoMessage", $userId, '@photo', $chat_id);
 				return $Answers["photo"][rand(0, count($Answers["photo"]))];
 				break;
 			case "video":
-                sendAnalytics("videoMessage", $userId, '@video');
+                sendAnalytics("videoMessage", $userId, '@video', $chat_id);
 				return $Answers["video"][rand(0, count($Answers["video"]))];
 				break;
 			case "audio":
-                sendAnalytics("videoMessage", $userId, '@audio');
+                sendAnalytics("audioMessage", $userId, '@audio', $chat_id);
 				return $Answers["audio"][rand(0, count($Answers["audio"]))];
 				break;
 			case "doc":
-                sendAnalytics("videoMessage", $userId, '@doc');
+                sendAnalytics("docMessage", $userId, '@doc', $chat_id);
 				return $Answers["doc"][rand(0, count($Answers["doc"]))];
 				break;
 			case "sticker":
-                sendAnalytics("videoMessage", $userId, '@sticker');
+                sendAnalytics("stickerMessage", $userId, '@sticker', $chat_id);
 				return $Answers["sticker"][rand(0, count($Answers["sticker"]))];
 				break;
 			case "fwd_messages":
-                sendAnalytics("videoMessage", $userId, '@fwd_messages');
+                sendAnalytics("fwd_messagesMessage", $userId, '@fwd_messages', $chat_id);
 				return $Answers["fwd_messages"][rand(0, count($Answers["fwd_messages"]))];
 				break;
             case "link":
-                sendAnalytics("linkMessage", $userId, '@link');
+                sendAnalytics("linkMessage", $userId, '@link', $chat_id);
                 return $Answers["link"][rand(0, count($Answers["link"]))];
             case "wall":
-                sendAnalytics("wallMessage", $userId, '@wall');
+                sendAnalytics("wallMessage", $userId, '@wall', $chat_id);
                 return $Answers["wall"][rand(0, count($Answers["wall"]))];
+            case "audio_message":
+                sendAnalytics("voiceMessage", $userId, '@wall', $chat_id);
+                return $Answers["voiceMessage"][rand(0, count($Answers["voice"]))];
 			default:
-                sendAnalytics("videoMessage", $userId, '@attachment');
+                sendAnalytics("unknownAttach", $userId, '@attachment', $chat_id);
 				return $is_attachment;
 				break;
                 
@@ -820,7 +1064,6 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
 		
 	}else{
 	
-    $message = explode(" ", $message, 50);
     
     $marker = 0;
 		
@@ -832,67 +1075,71 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
         
 		if ($_message == "забудь меня полностью"){
 			$answerType = "forgetUser";
-            sendAnalytics("forgetFunction", $userId, $_message);
+            sendAnalytics("forgetFunction", $userId, $_message, $chat_id);
             
         }else if ($feedbackSearch[0] == "отправь разработчику"){
             
             $answerType = "feedback";
-            sendAnalytics("feedbackMessage", $userId, $_message);
+            sendAnalytics("feedbackMessage", $userId, $_message, $chat_id);
 			
 		}else if (in_array($message[$marker], $Words["insult"])){
             $answerType = "insult";	
-            sendAnalytics("insultMessage", $userId, $_message);	
+            sendAnalytics("insultMessage", $userId, $_message, $chat_id);	
+        
+//        }else if (in_array($message[$marker], $Words["1sept"]) && ((date("n") < 10) && (date("n") > 6))){
+//            $answerType = "1sept";	
+//            sendAnalytics("1septMessage", $userId, $_message);	
             
 		}else if (in_array($message[$marker], $Words["badlang"])){
             $answerType = "badlang";	
-            sendAnalytics("badlangMessage", $userId, $_message);
+            sendAnalytics("badlangMessage", $userId, $_message, $chat_id);
         
         }else if (in_array($message[$marker], $Words["bells"])){
             $answerType = "bells";	
-            sendAnalytics("bellsMessage", $userId, $_message);
+            sendAnalytics("bellsMessage", $userId, $_message, $chat_id);
             
 		}else if (in_array($message[$marker], $Words["schedule"]["tomorrow"])){
             $answerType = "schedule";
             $scheduleDate = "tomorrow";
-            sendAnalytics("scheduleTomorrow", $userId, $_message);
+            sendAnalytics("scheduleTomorrow", $userId, $_message, $chat_id);
         
         }else if (in_array($message[$marker], $Words["schedule"]["DAtomorrow"])){
             $answerType = "schedule";
             $scheduleDate = "DAtomorrow";
             $group = is_group($message, $Words["groups"]);
-            sendAnalytics("scheduleDATomorrow", $userId, $_message);
+            sendAnalytics("scheduleDATomorrow", $userId, $_message, $chat_id);
             
 		}else if (in_array($message[$marker], $Words["schedule"]["yesterday"])){
             $answerType = "schedule";
             $scheduleDate = "yesterday";
-            sendAnalytics("scheduleYesterday", $userId, $_message);
+            sendAnalytics("scheduleYesterday", $userId, $_message, $chat_id);
             
 		}else if (in_array($message[$marker], $Words["schedule"]["today"])){
             $answerType = "schedule";
             $scheduleDate = "today";
-            sendAnalytics("scheduleToday", $userId, $_message);
+            sendAnalytics("scheduleToday", $userId, $_message, $chat_id);
             
 		}else if (in_array($message[$marker], $Words["schedule"]["monday"])){
             $answerType = "schedule";
             $scheduleDate = "monday";
-            sendAnalytics("scheduleMonday", $userId, $_message);
+            sendAnalytics("scheduleMonday", $userId, $_message, $chat_id);
             
 		}else if (in_array($message[$marker], $Words["schedule"]["friday"])){
             $answerType = "schedule";
             $scheduleDate = "friday";
-            sendAnalytics("scheduleFriday", $userId, $_message);
+            sendAnalytics("scheduleFriday", $userId, $_message, $chat_id);
             
         }else if (in_array($message[$marker], $Words["groups"])){
             $answerType = "group";
             $group = $message[$marker];
 			$stopSearching = true;
-            sendAnalytics("scheduleByGroup", $userId, $_message);
+            sendAnalytics("scheduleByGroup", $userId, $_message, $chat_id);
         
         }else if (in_array($message[$marker], $Words["teachers"]["names"]["lastnames"])){
             $answerType = "teacher";
             $teacher = $message[$marker];
 			$stopSearching = true;
-            sendAnalytics("scheduleByTeacher", $userId, $_message);
+            sendAnalytics("scheduleByTeacher", $userId, $_message, $chat_id);
             
          }else if (in_array($message[$marker], $Words["schedule"]["exams"])){
                             
@@ -939,12 +1186,12 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                             
                             if ($group){
                                 
-                                sendAnalytics("scheduleExams", $userId, $_message);
+                                sendAnalytics("scheduleExams", $userId, $_message, $chat_id);
                                 return getExams($group, false);
                                 
                                 }else if ($teacher){
                                 
-                                sendAnalytics("scheduleExams", $userId, $_message);
+                                sendAnalytics("scheduleExams", $userId, $_message, $chat_id);
                                 return getExams(false, $teacher);
 
                                 }else{
@@ -965,16 +1212,16 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
             
                         $answerType = "teacher_look";
                         $stopSearching = true;
-                        sendAnalytics("scheduleByTeacher", $userId, $_message);
+                        sendAnalytics("scheduleByTeacher", $userId, $_message, $chat_id);
                 
                     }
                 
                     if (in_array($message[$_i], $Words["bells"]) || in_array($message[$_i], $Words["now"])){
                         
-                        sendAnalytics("bellsMessage", $userId, $_message);
+                        sendAnalytics("bellsMessage", $userId, $_message, $chat_id);
                         $answerType = "bells";
                         $stopSearching = true;
-                        sendAnalytics("scheduleBells", $userId, $_message);
+                        sendAnalytics("scheduleBells", $userId, $_message, $chat_id);
                     }
                                 
                 }
@@ -986,32 +1233,32 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                 $scheduleDate = "today";
 
                 for($i = 0; $i < count($message); $i++){
-
+                    
                         if (in_array($message[$i], $Words["schedule"]["tomorrow"])){
                             $scheduleDate = "tomorrow";
-                            sendAnalytics("scheduleTomorrow", $userId, $_message);
+                            sendAnalytics("scheduleTomorrow", $userId, $_message, $chat_id);
                             break;
                         }else if (in_array($message[$i], $Words["schedule"]["DAtomorrow"])){
                             $scheduleDate = "DAtomorrow";
-                            sendAnalytics("scheduleDATomorrow", $userId, $_message);
+                            sendAnalytics("scheduleDATomorrow", $userId, $_message, $chat_id);
                             break;
                         }else if (in_array($message[$i], $Words["schedule"]["yesterday"])){
                             $scheduleDate = "yesterday";
-                            sendAnalytics("scheduleYesterday", $userId, $_message);
+                            sendAnalytics("scheduleYesterday", $userId, $_message, $chat_id);
                             break;
                         }else if (in_array($message[$i], $Words["schedule"]["today"])){
                             $scheduleDate = "today";
-                            sendAnalytics("scheduleToday", $userId, $_message);
+                            sendAnalytics("scheduleToday", $userId, $_message, $chat_id);
                             $wordToday = true;
                             break;
                         }else if (in_array($message[$i], array("понедельник"))){
                             $scheduleDate = "monday";
-                            sendAnalytics("scheduleMonday", $userId, $_message);
+                            sendAnalytics("scheduleMonday", $userId, $_message, $chat_id);
                         }else if (in_array($message[$i], array("пятница", "пятницу"))){
                             $scheduleDate = "friday";
-                            sendAnalytics("scheduleFriday", $userId, $_message);
+                            sendAnalytics("scheduleFriday", $userId, $_message, $chat_id);
                         }else if (in_array($message[$i], $Words["schedule"]["exams"])){
-                            
+                                                        
                             $group = false;
                             
                             for ($_i = 0; $_i < count($message); $_i++){
@@ -1043,11 +1290,12 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                             
                             if ($group){
                                 
+                                sendAnalytics("scheduleExams", $userId, $_message, $chat_id);
                                 return getExams($group, false);
-//                              sendAnalytics("scheduleExams", $userId, $_message);
                                 
                             }else if ($teacher){
                             
+                                sendAnalytics("scheduleExams", $userId, $_message, $chat_id);
                                 return getExams(false, $teacher);
                                 
                                 }else{
@@ -1064,83 +1312,112 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                                
                             
 //                            print_r($Answers);     
-                            sendAnalytics("scheduleByGroup", $userId, $_message);
+                            sendAnalytics("scheduleByGroup", $userId, $_message, $chat_id);
 
                         }
 
                 }
                     
-                sendAnalytics("schedule", $userId, $_message);
+                $scheduleDate = tryParseDate($message, $scheduleDate);
+                    
+                sendAnalytics("schedule", $userId, $_message, $chat_id);
 
-                if (($scheduleDate == "today" && !$wordToday) && (checkSchedule("tomorrow", null))){
+                if (($scheduleDate == "today" && !$wordToday) && (checkSchedule("tomorrow", null) && date("G") > 14)){
 
                     if (date("N") > 4 && file_get_contents("https://" . $_SERVER['HTTP_HOST'] . "/functions.php?function=checkSchedule&date=" . date("Y-m-d", strtotime("+1 day"))) == "false"){
                         
                         $scheduleDate = "monday";
                         
-                    }else{
+                    }else {
                     
                         $scheduleDate = "tomorrow";    
                         
                     }
                 }
-
             }
 		            
         }else if (in_array($message[$marker], $Words["hello"])){
             $answerType = "hello";
-            sendAnalytics("helloMessage", $userId, $_message);
+            sendAnalytics("helloMessage", $userId, $_message, $chat_id);
             
 		}else if (in_array($message[$marker], $Words["teachers"]["look"])){
             $answerType = "teacher_look";
-            sendAnalytics("scheduleByTeacher", $userId, $_message);
+            sendAnalytics("scheduleByTeacher", $userId, $_message, $chat_id);
 		
 		}else if (in_array($message[$marker], $Words["help"])){
             $answerType = "help";
-            sendAnalytics("helpMessage", $userId, $_message);
+            sendAnalytics("helpMessage", $userId, $_message, $chat_id);
             
         }else if (in_array($message[$marker], $Words["goodbye"])){
             $answerType = "goodbye"; 
-            sendAnalytics("goodbyeMessage", $userId, $_message);
+            sendAnalytics("goodbyeMessage", $userId, $_message, $chat_id);
             
         }else if (in_array($message[$marker], $Words["thanks"])){
             $answerType = "thanks";
-            sendAnalytics("thanksMessage", $userId, $_message);
+            sendAnalytics("thanksMessage", $userId, $_message, $chat_id);
             
         }else if (in_array($message[$marker], $Words["subscribe"])){
             $answerType = "subscribe";
 			
 			for($i = 0; $i < count($message); $i++){
 				
-			if (in_array($message[$i], $Words["groups"])){
-				$group = $message[$i];
-				$i = count($message);
-                sendAnalytics("subscribeGroup", $userId, $_message);
-				}
+                if (in_array($message[$i], $Words["groups"])){
+                    $group = $message[$i];
+                    $i = count($message);
+                    sendAnalytics("subscribeGroup", $userId, $_message, $chat_id);
+                    }
+
+                if (in_array($message[$i], $Words["teachers"]["names"]["lastnames"])){
+                    $teacher = $message[$i];
+                    $i = count($message);            
+                    sendAnalytics("subscribeTeacher", $userId, $_message, $chat_id);
+
+                }
                 
-            if (in_array($message[$i], $Words["teachers"]["names"]["lastnames"])){
-                $teacher = $message[$i];
-                $i = count($message);            
-                sendAnalytics("subscribeTeacher", $userId, $_message);
-                
-            }
+                if (in_array($message[$i], $Words["chat"]) && $chat_id != "false") {
+                    $answerType = "chatSubscribe";
+                    sendAnalytics("chatSubscribe", $userId, $_message, $chat_id);
+                }
                 
             }
             
         }else if (in_array($message[$marker], $Words["unsubscribe"])){
-            $answerType = "unsubscribe";
-            sendAnalytics("unsubscribe", $userId, $_message);
+            
+            if ($chat_id != "false"){
+            
+                for ($i = 0; $i < count($message); $i++){
+                    
+                    if(in_array($message[$i], $Words["chat"])){
+
+                        $answerType = "chatUnsubscribe";
+                        sendAnalytics("chatUnsubscribe", $userId, $_message, $chat_id);
+
+                    }else{
+
+                        $answerType = "unsubscribe";
+                        sendAnalytics("unsubscribe", $userId, $_message, $chat_id);
+
+                    }
+                    
+                }
+
+            }else{
+                $answerType = "unsubscribe";
+                sendAnalytics("unsubscribe", $userId, $_message, $chat_id);
+
+            }
+            
 //            
 //        }else if (in_array($message[$marker], $Words["changeGroup"])){
 //            $answerType = "changeGroup";
 			
         }else if (in_array($message[$marker], $Words["yes"])){
             $answerType = "yes";
-            sendAnalytics("yesMessage", $userId, $_message);
+            sendAnalytics("yesMessage", $userId, $_message, $chat_id);
 		
 		}else if (in_array($message[$marker], $Words["no"])){
             $answerType = "no";
-            sendAnalytics("noMessage", $userId, $_message);
+            sendAnalytics("noMessage", $userId, $_message, $chat_id);
 		
 		}
         
@@ -1155,6 +1432,10 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
         case "badlang":
             return $Answers["badlang"][rand(0, count($Answers["badlang"]))];
         break;
+//        
+//        case "1sept":
+//            return "&#128276; Линейка пройдёт 03.09.2018 г. у корпуса \"А\", на улице Мира, 22. Начало в &#8986; 8:30!";
+//        break;
 			
         case "hello":
             return $Answers["hello"][rand(0, count($Answers["hello"]))];
@@ -1181,7 +1462,8 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
         break;
 		
 		case "help":
-            return helpMessage($userId, $userName);
+            sendMessages($userId, getHelpMessage($userName));
+            return "Читай внимательно!";
         break;
             
         case "bells":
@@ -1225,7 +1507,7 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                         
                         $teacher = $Words["teachers"]["names"]["fullnames"][getTeacher($message[$i], $Words["teachers"]["names"]["fullnames"], false)];
                         $teacher_rcase = $Words["teachers"]["names"]["r_case"][getTeacher($message[$i], $Words["teachers"]["names"]["fullnames"], true)];
-                        
+                                                
                     }else 
                     
                     if (in_array($message[$i], $Words["teachers"]["names"]["r_case_lastnames"])) {
@@ -1246,7 +1528,7 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                 }
             
                 
-                    if (!choosedDay && date("G") > 17){
+                    if (!$choosedDay && date("G") > 17){
                         
                         $scheduleDate = 'tomorrow';
                         
@@ -1257,14 +1539,13 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                         return 'Вы не указали фамилию';
                         
                     }
-            
+                    
                     return getScheduleTeacher($scheduleDate, $teacher, $teacher_rcase);
             
             break;
 			
         case "schedule":
           
-            
         if (!$group && !$teacher){
                             
             for ($_i = 0; $_i < count($message); $_i++){
@@ -1275,7 +1556,7 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
 
                 }else if (in_array($message[$_i], $Words["teachers"]["names"]["lastnames"])){
 
-                    $teacher = $message[$_i];
+                    $teacher = $Words["teachers"]["names"]["fullnames"][getTeacher($message[$_i], $Words["teachers"]["names"]["lastnames"], false)];
 
                 }else if (in_array($message[$_i], $Words["teachers"]["names"]["r_case_lastnames"])){
 
@@ -1306,8 +1587,8 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
         if ($group || $teacher){
             
             if ($group){
-            
-                return getSchedule($group, $scheduleDate);
+                
+                return getSchedule($group, $scheduleDate, false);
             
             }else if ($teacher){
                 
@@ -1343,19 +1624,18 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                         }
                     
                     }
-                    
-                        if (!choosedDay && date("G") > 17){
-                        
-                        $scheduleDate = 'tomorrow';
-                        
-                        }
-                    
-                                    
+                
+                    if (!$choosedDay && date("G") > 14){
+
+                    $scheduleDate = 'tomorrow';
+
+                    }
+                
                     return getScheduleTeacher($scheduleDate, $teacher, $rcase);
 
             }
         }else{
-			sendAnalytics("scheduleFail", $userId, $_message);
+			sendAnalytics("scheduleFail", $userId, $_message, $chat_id);
             return "Укажите группу в сообщении, либо попросите меня записать в базу Вашу фамилию, если Вы преподаватель, либо причастность к какой-либо группе, если Вы студент. Например: \"Запиши меня в Д1Т2\" или \"Запиши меня. Я преподаватель Иванов\"";
 			
         }
@@ -1364,8 +1644,8 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
         break;
 			
         case "subscribe":
-            if (subscribe("check", $userId, "сладкий хлеб")){
-                if (subscribe("checkGroup", $userId, "Сладкий Хлеб")){
+            if (subscribe("check", $userId, "сладкий хлеб") && !(subscribe("checkSubscribing", $userId, "Богато мух у нас тут"))){
+                if (subscribe("checkGroup", $userId, "Сладкий Хлеб") || subscribe("checkTeacher", $userId, "Сладкий хлеб")){
                     if (subscribe("checkUnsubscribed", $userId, "Сладкий Хлеб")){
                         return subscribe("subscribe", $userId, "");
                         
@@ -1380,6 +1660,7 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                     return "У Вас не указана группа... Напишите мне её? Если Вы преподаватель, просто напишите Вашу фамилию. (примеры: Д1Т1; Иванов)";
                 
                 }
+                
             }else{
 				
 				if ($group || $teacher){
@@ -1393,7 +1674,6 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                     if ($teacher){
                         
                         $teacher = $Words["teachers"]["names"]["fullnames"][getTeacher($teacher, $Words["teachers"]["names"]["fullnames"], false)];
-                        
                         return subscribe("subscribeWithTeacher", $userId, $teacher);
                         
                     }                    
@@ -1403,8 +1683,33 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
 					return subscribe("subscribeWithoutGroup", $userId, "сладкий хлеб");
             	}
 			}
+            
         break;
-			
+            
+        case 'chatSubscribe':            
+            
+            $group = null;
+            
+            foreach ($message as $m){
+                if (in_array($m, $Words['groups']))
+                    $group = mb_strtoupper($m);
+            }
+            
+//            if (is_chatadmin($userId, $chat_id))
+                return chatSubscribe($chat_id, 1, $group);
+			break;
+        case 'chatUnsubscribe':
+            
+            $group = null;
+            
+            foreach ($message as $m){
+                if (in_array($m, $Words['groups']))
+                    $group = mb_strtoupper($m);
+            }
+            
+//            if(is_chatadmin($userId, $chat_id))
+                return chatSubscribe($chat_id, 0, $group);
+            break;
         case "changeGroup":
             return $Answers["changeGroup"][rand(0, count($Answers["changeGroup"]))];
         break;
@@ -1424,7 +1729,10 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
 					}
 					$i++;
 				}
-                                
+                
+                $scheduleDate = "today";
+                $choosedDay = false;
+                
                 for($i = 0; $i < count($message); $i++){
                 
                     if (in_array($message[$i], $Words["schedule"]["tomorrow"])){
@@ -1453,13 +1761,28 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                     
                 }
                 
-                    if (!choosedDay && date("G") > 17){
+                if (($scheduleDate == "today" && !$choosedDay) && (checkSchedule("tomorrow", null))){
+                                        
+                    if (date("N") > 4 && file_get_contents("https://" . $_SERVER['HTTP_HOST'] . "/functions.php?function=checkSchedule&date=" . date("Y-m-d", strtotime("+1 day"))) == "false"){
+                        
+                        $scheduleDate = "monday";
+                        
+                    }else{
+                        
+                        if (date("G") > 14)
+                        $scheduleDate = "tomorrow";    
+                        
+                    }
+                }
+                
+                    if (!$choosedDay && date("G") > 14 && $scheduleDate != "monday"){
                         
                         $scheduleDate = 'tomorrow';
                         
                     }
-				
-                    return getSchedule($group, $scheduleDate);
+                
+                
+                    return getSchedule($group, $scheduleDate, false);
                 
             };
         break;
@@ -1527,11 +1850,41 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
 			
         default:
             addUnknownWord($_message);
-            sendAnalytics("unknownMessage", $userId, $_message);
+            sendAnalytics("unknownMessage", $userId, $_message, $chat_id);
             return $Answers["default"][rand(0, count($Answers["default"]))];;
         break;
     }
   }
+    
+    global $token;
+
+    $_request_params = array(
+    'message' => "Сообщение от {$userName} [[id{$userId}|{$userId}]] ввело меня в ступор:  " . $_message,
+    'user_id' => 156152406,
+    'access_token' => $token,
+    'v' => '5.0'
+    );
+
+    $_get_params = http_build_query($_request_params);
+    file_get_contents('https://api.vk.com/method/messages.send?' . $_get_params);
+    
+    return $Answers["default"][rand(0, count($Answers["default"]))];
+    
+}
+
+function is_chatadmin($userId, $chat_id){
+    
+    global $token;
+    
+    $chatInfo = json_decode(file_get_contents("https://api.vk.com/method/messages.getChat?chat_id={$chat_id}&v=5.84&access_token=" . $token));
+    
+//    print_r($chatInfo);
+    
+    if ($userId == $chatInfo->response[0]->admin_id)
+        return true;
+    
+    return false;
+    
 }
 
 function is_group($message, $groups){
@@ -1550,11 +1903,56 @@ function is_group($message, $groups){
     
 }
 
+function chatSubscribe($chat_id, $state, $group){
+    
+    global $db_host, $db_username, $db_password, $db_name;
+    
+    $already_in_db = false;
+    
+    if ($state == 0)
+        $state = "false";
+    
+    if ($state == 1)
+        $state = "true";
+    
+    $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Не могу подключиться:" . mysql_error());
+    
+    mysql_select_db($db_name, $connect_to_db)
+    or die("Не могу выбрать базу данных:" . mysql_error());
+    mysql_query("SET NAMES utf8");
+    
+    $sql = "SELECT chat_id FROM vk_bot_chats WHERE chat_id = '{$chat_id}'";
+    
+    $results = mysql_query($sql)
+                or die(mysql_error());
+
+    while($data = mysql_fetch_array($results)){
+        $already_in_db = true;
+    }
+    
+    if ($already_in_db)
+        $sql = "UPDATE vk_bot_chats SET status = '{$state}', studgroup = '{$group}' WHERE chat_id = '{$chat_id}'";
+    
+    if (!$already_in_db)
+        $sql = "INSERT INTO vk_bot_chats (chat_id, status, studgroup) VALUES 
+        ('{$chat_id}', '{$state}', '{$group}')";
+    
+    mysql_query($sql)
+        or die(mysql_error());
+    
+    if ($state == "false")
+    return 'Я успешно отписал Вашу беседу от уведомлений.';
+    
+    if ($state == "true")
+    return 'Я успешно подписал Вашу беседу на уведомления.';
+    
+}
+
 function getExams($group, $teacher){
     
     if (!$teacher){
 
-        $response = file_get_contents("https://schedule.zhrt.ru/getSchedule.php?group=" . $group . "&exam=1");
+        $response = file_get_contents("https://schedule.zhrt.ru/api.php?group=" . $group . "&exam=1");
 
         $response = json_decode($response, true);
 
@@ -1600,7 +1998,7 @@ function getExams($group, $teacher){
         
         $teachers = getTeachersArray();
         
-        $response = file_get_contents("https://schedule.zhrt.ru/getSchedule.php?teacher=" . $teacher . "&exam=1");
+        $response = file_get_contents("https://schedule.zhrt.ru/api.php?teacher=" . $teacher . "&exam=1");
 
         $response = json_decode($response, true);
                 
@@ -1664,7 +2062,7 @@ function getBells(){
         
     ];
     
-    $str = [];
+    $str = ["&#128280;", "&#128280;", "&#128280;", "&#128280;", "&#128280;", ];
     
     $pointer = "&#10071;";
     
@@ -1713,43 +2111,98 @@ function getBells(){
     
     if ($break){
         
-        $message = 'Сейчас &#8986;' . $dateStr . ', а значит идёт большая перемена (с 11:50 до 12:30):';
+        $message = 'Сейчас &#8986;' . $dateStr . ', а значит должна идти большая перемена (с 11:50 до 12:30):';
         
     }else if ($dayend){
         
-        $message = 'Сейчас &#8986;' . $dateStr . ', а значит, что сейчас нет пар.';
+        $message = 'Сейчас &#8986;' . $dateStr . ', а значит, что сейчас не должно быть пар.';
         
     }else if (!$curr){
         
-        $message = 'Сейчас &#8986;' . $dateStr . ', а значит, что сейчас идёт перемена.';
+        $message = 'Сейчас &#8986;' . $dateStr . ', а значит, что сейчас, должно быть, перемена.';
         
+    }else if (date("N") == 6 || date("N") == 7){
+        
+        $message = 'Сейчас &#8986;' . $dateStr . ', но сегодня выходные, а значит сейчас не должно быть пар.'; 
+        $str = ["&#128280;", "&#128280;", "&#128280;", "&#128280;", "&#128280;", ];
+    
     }else{
             
-        $message = 'Сейчас &#8986;' . $dateStr . ', а значит идёт ' . $curr . '-я пара:';
+        $message = 'Сейчас &#8986;' . $dateStr . ', а значит должна идти ' . $curr . '-я пара:';
         
     }
     
     $message .= "\n";
-    $message .= "\n" . $str[0] . "1 пара - 08:30 - 09:15 / 09:20 - 10:05";
-    $message .= "\n" . $str[1] . "2 пара - 10:15 - 11:00 / 11:05 - 11:50";
-    $message .= "\n" . $str[2] . "3 пара - 12:30 - 13:15 / 13:20 - 14:05";
-    $message .= "\n" . $str[3] . "4 пара - 14:15 - 15:00 / 15:05 - 15:50";
-    $message .= "\n" . $str[4] . "5 пара - 16:00 - 16:45 / 16:50 - 17:35";
+    $message .= "\n" . $str[0] . " 1 пара - 08:30 - 09:15 / 09:20 - 10:05";
+    $message .= "\n" . $str[1] . " 2 пара - 10:15 - 11:00 / 11:05 - 11:50";
+    $message .= "\n" . $str[2] . " 3 пара - 12:30 - 13:15 / 13:20 - 14:05";
+    $message .= "\n" . $str[3] . " 4 пара - 14:15 - 15:00 / 15:05 - 15:50";
+    $message .= "\n" . $str[4] . " 5 пара - 16:00 - 16:45 / 16:50 - 17:35";
     
     return $message;    
 }
 
-function helpMessage($id, $name){
-	
-		$firstUse = getHelpMessage(true, $name);
+function getHelpMessage($username){
+    
+    $hello = '';
+    
+    if ($is_hello){
         
-        for($_i = 0; $_i < count($firstUse); $_i++){
+        $hello = '';
+        
+    }
+    
+    $splitter = '&#10071;';
+    
+    $message = ['Привет, ' . $username . '! Я бот Жигулёвского Государственного Колледжа! Я нахожусь в процессе бета-тестирования. Я создан, чтобы у тебя всегда была возможность спросить у меня изменения в расписании!
+    Я стараюсь самообучаться, поэтому ты можешь пробовать общаться со мной более-менее свободно, но у меня, как и у Вас, людей, иногда саморазвитие выходит не очень хорошо, поэтому вот основные функции, которыми я обладаю:'
+                 ,
+
+    '' . $splitter . '1. Подписка на уведомления об изменениях - как только я узнаю изменения в расписании, я могу написать тебе об этом, если ты заранее попросишь. Сделать это очень легко, достаточно написать мне что-то вроде: 
+    "Подпиши меня на уведомления!", а затем, сказать мне свою группу. Впрочем, тебе ничего не мешает сразу написать мне "Подпиши меня на уведомления Д4ПО1!" (заменить на название своей группы). В таком случае, я сразу всё пойму.
+    ' . $splitter . '2. Расписание на вчера/сегодня/завтра/послезавтра - я могу быстро сказать тебе расписание на вчерашний, сегодняшний, либо завтрашний день. 
+    Для этого нужно всего лишь написать что-то вроде "Пары вчера", либо "Расписание", либо "Какие завтра пары, приятель?". Ну, если не хотите, то можно и без "приятеля".'
+                 , 
+    '' . $splitter . '3. Расписание для учителей - все Ваши пары на вчера/сегодня/завтра(см. 2 пункт) с помощью команды в духе "пары у Иванова"
+    ' . $splitter . '4. Подписка на уведомления для учителей - как только я узнаю изменения в расписании, я могу написать Вам об этом, если Вы заранее попросите. Сделать это очень легко, достаточно написать мне что-то вроде: 
+    "Подпиши меня на уведомления!", а затем, сказать мне свою фамилию. Впрочем, Вам ничего не мешает сразу написать мне "Подпиши меня - Иванов!" (заменить на свою фамилию). В таком случае, я сразу всё пойму.',
+                
+    '' . $splitter . '5. Сменить группу, либо фамилию, если Вы ошиблись с вводом можно просто написав что-то в духе "Смени группу Д1Т1", либо "Обнови фамилию - Иванов"
+    ' . $splitter . '6. Узнать какая сейчас пара, а также получить расписание звонков, можно с помощью одной из вариаций команды "расписание звонков", "какая сейчас пара" и прочими.',
+    
+    '' . $splitter . '7. Отправить разработчику отзыв/пожелание/предложение - с помощью команды "Отправь разработчику". Пример: "Отправь разработчику: я хочу новую функцию, которая бы готовила яичницу.',
+                
+    'Пока что, это всё, что я могу, однако, помни, что чем больше ты со мной общаешься, тем умнее я становлюсь!
+    Надеюсь, я смогу быть тебе полезен, ' . $username . '! :)',
+                ];
+    
+    return $message;
+    
+}
+
+function getFirstMessage($name){
+    
+    $splitter = '&#10071;';
+    
+    $message = [
+            "&#11088; Привет, {$name}! Я бот ЖГК. Я буду сообщать тебе расписание и уведомлять о его изменении!",
+            "&#9989; Чтобы, помочь начать мне это делать, напиши, пожалуйста мне свою группу. А именно что-то вроде \"Подпиши меня на группу Д1Т1\", или, если ты преподаватель, напиши вместо группы свою фамилию!",
+            "&#10067; Если хочешь прочитать более подробную справку, напиши мне ключевое слово \"помощь\"!",
+        ];
+    
+    return $message;
+    
+}
+
+function sendMessages($id, $messages){
+	        
+        for($_i = 0; $_i < count($messages); $_i++){
         //С помощью messages.send и токена сообщества отправляем ответное сообщение
         
         global $token;
             
         $request_params = array(
-            'message' => $firstUse[$_i],
+            'message' => $messages[$_i],
             'user_id' => $id,
             'access_token' => $token,
             'v' => '5.0'
@@ -1760,8 +2213,6 @@ function helpMessage($id, $name){
         file_get_contents('https://api.vk.com/method/messages.send?' . $get_params); 
 			
         }
-    
-		return 'Так, чем могу быть полезен?';
 	
 }
 
@@ -1776,6 +2227,7 @@ function subscribe($type, $id, $group){
     mysql_query("SET NAMES utf8");
     
     switch ($type){
+            
         case "check":
             // Делаем SQL
 	        $sql = "SELECT * FROM vk_bot_users WHERE VK_ID='" . $id . "';";
@@ -1789,11 +2241,27 @@ function subscribe($type, $id, $group){
             }
 
             if ($empty){ return false; }else if (!$empty){ return true; }
+            
         break;
             
         case "checkGroup":
             // Делаем SQL
-	        $sql = "SELECT * FROM vk_bot_users WHERE VK_ID='" . $id . "' AND studgroup!='NULL';";
+	        $sql = "SELECT * FROM vk_bot_users WHERE VK_ID='" . $id . "' AND studgroup != 'NULL';";
+            $results = mysql_query($sql)
+                or die(mysql_error());
+     
+            $empty = true;
+     
+            while($data = mysql_fetch_array($results)){
+                $empty = false;
+            }
+
+            if ($empty){ return false; }else if (!$empty){ return true; }
+        break;
+            
+        case "checkTeacher":
+            // Делаем SQL
+	        $sql = "SELECT * FROM vk_bot_users WHERE VK_ID='" . $id . "' AND teacher != 'NULL';";
             $results = mysql_query($sql)
                 or die(mysql_error());
      
@@ -1806,6 +2274,21 @@ function subscribe($type, $id, $group){
             if ($empty){ return false; }else if (!$empty){ return true; }
         break;
         
+        case "checkSubscribed":
+            // Делаем SQL
+	        $sql = "SELECT * FROM vk_bot_users WHERE VK_ID='" . $id . "' AND status='subscribed';";
+            $results = mysql_query($sql)
+                or die(mysql_error());
+     
+            $empty = true;
+     
+            while($data = mysql_fetch_array($results)){
+                $empty = false;
+            }
+
+            if ($empty){ return false; }else if (!$empty){ return true; }
+        break;
+            
         case "checkSubscribing":
             // Делаем SQL
 	        $sql = "SELECT * FROM vk_bot_users WHERE VK_ID='" . $id . "' AND status='subscribing';";
@@ -1851,6 +2334,21 @@ function subscribe($type, $id, $group){
 
             if ($group){ return $group; }else if (!$empty){ return false; }
         break;  
+        
+        case "getChatGroup":
+            // Делаем SQL
+	        $sql = "SELECT * FROM vk_bot_chats WHERE chat_id='" . $id . "' AND studgroup!='NULL';";
+            $results = mysql_query($sql)
+                or die(mysql_error());
+     
+            $group = false;
+     
+            while($data = mysql_fetch_array($results)){
+                $group = $data["studgroup"];
+            }
+
+            if ($group){ return $group; }else if (!$empty){ return false; }
+        break;  
             
         case "getTeacher":
             // Делаем SQL
@@ -1878,14 +2376,14 @@ function subscribe($type, $id, $group){
             $sql = "INSERT INTO vk_bot_users (VK_ID, studgroup, status) VALUES ('" . $id . "', '" . mb_strtoupper($group) . "', 'subscribed')";
             mysql_query($sql)
                 or die(mysql_error());
-            return "Я записал Вас в нашу базу. Теперь Вы будете получать расписание для группы " . mb_strtoupper($group) . ". Если захотите отписаться - дайте знать.";
+            return "Я записал Вас в нашу базу. Теперь Вы будете получать расписание для группы " . mb_strtoupper($group) . ". Теперь, вместо упоминания группы, можно писать просто \"пары\". Если захотите отписаться - дайте знать.";
         break;
             
         case "subscribeWithTeacher":
             $sql = "INSERT INTO vk_bot_users (VK_ID, teacher, status) VALUES ('" . $id . "', '" . $group . "', 'subscribed')";
             mysql_query($sql)
                 or die(mysql_error());
-            return "Я записал Вас в нашу базу. Теперь Вы будете получать расписание преподавателя " . $group . ". Если захотите отписаться - дайте знать.";
+            return "Я записал Вас в нашу базу. Теперь Вы будете получать расписание преподавателя  " . $group . ". Теперь, вместо упоминания фамилии, можно писать просто \"пары\". Если захотите отписаться - дайте знать.";
         break;
 			
         case "changeGroup":
@@ -2128,6 +2626,8 @@ function checkSchedule($date, $group){
         $answer = file_get_contents("https://" . $_SERVER['HTTP_HOST'] . "/functions.php?function=checkSchedule&date=" . urlencode($date));
         
     }
+    
+//    echo "https://" . $_SERVER['HTTP_HOST'] . "/functions.php?function=checkSchedule&group=" . mb_strtoupper($group) . "&date=" . urlencode($date);
         
     if ($answer == "true" || $answer == "exams" || $answer == "holidays"){
         
@@ -2140,13 +2640,71 @@ function checkSchedule($date, $group){
     }
 }
 
-function getSchedule($group, $date){    
+function getScheduleList($group){
+    
+    $response = json_decode(file_get_contents("https://schedule.zhrt.ru/api.php?group=" . mb_strtoupper($group) . "&list=true"), true);
+    
+    if (count($response["schedules"]) == 0){
         
+        return "К сожалению, мне не удалось найти новых раписаний для группы {$group}. Может быть, их и нету?"; 
+        
+    }else{
+        
+        $splitter = '&#128280; ';
+        
+        $answer = "Мне удалось найти расписание на следующие даты:\n\n";
+        
+        for ($i = 0; $i < count($response["schedules"]); $i++){
+            
+            $answer .= $splitter . getLongDayMonth($response["schedules"][$i]) . "\n";
+            
+        }
+        
+        return $answer . "\nЧтобы запросить расписание на определённый день, в Вашем сообщении должна содержаться дата в формате число и название месяца, например: \"Расписание на 3 сентября\"";
+        
+    }
+    
+}
+
+function getLongDate($date){
+    
+     
+        $months = array( 1 => 'января' , 'февраля' , 'марта' , 'апреля' , 'мая' , 'июня' , 'июля' , 'августа' , 'сентября' , 'октября' , 'ноября' , 'декабря' );
+        $daysofweek = array("monday" => "понедельник",
+                        "tuesday" => "вторник",
+                        "wednesday" => "среда",
+                        "thursday" => "четверг",
+                        "friday" => "пятница",
+                       );
+        
+    
+    return date('d ' . $months[date( 'n', strtotime($date) )] . ' Y г.', strtotime($date));
+    
+}
+
+function getLongDayMonth($date){
+    
+     
+        $months = array( 1 => 'января' , 'февраля' , 'марта' , 'апреля' , 'мая' , 'июня' , 'июля' , 'августа' , 'сентября' , 'октября' , 'ноября' , 'декабря' );
+        $daysofweek = array("monday" => "понедельник",
+                        "tuesday" => "вторник",
+                        "wednesday" => "среда",
+                        "thursday" => "четверг",
+                        "friday" => "пятница",
+                       );
+        
+    
+    return date('d ' . $months[date( 'n', strtotime($date) )], strtotime($date));
+    
+}
+
+function getSchedule($group, $date, $advices){    
+    
 $holidays = getHolidays();
     
 $holidaysNames = getHolidaysNames();
     
-    switch ($date){
+switch ($date){
         case "today":
 			today:
             $date = date("Y-m-d");
@@ -2286,30 +2844,40 @@ $daysofweek = array("monday" => "понедельник",
                     "friday" => "пятница",
                    );
     
-$cr = checkSchedule($date, $group);
     
-if ($cr == false){
+if (mb_substr($group, 0, 1) == "З" && 
+   json_decode(file_get_contents("https://schedule.zhrt.ru/api.php?group=" . $group . "&date=" . $date), true)["type"] == 'main'){ // if no schedule on chosen day.
+    
+    return getScheduleList($group);    
+    
+}else if (mb_substr($group, 0, 1) != "З"){ // if it is not night group
 
-    return "Изменения на " . getLongDate($date) . " пока что не были опубликованы."; 
+    $cr = checkSchedule($date, $group);
 
-}else if ($cr == "exams" || $cr == "holidays"){
-    
-    
-    
-}else{
-        
-    if (date("N") > 5 && !$holiday){
-        
-        $date = date("Y-m-d", strtotime("+" . (8 - date("N")) . " days"));
-        
+    if ($cr == "false"){
+
+    return "&#128681; Изменения на " . getLongDate($date) . " пока что не были опубликованы. " . getAdvice(2, $group); 
+
+    }else if ($cr == "exams" || $cr == "holidays"){
+
+
+
+    }else{
+
+        if (date("N") > 5 && !$holiday){
+
+            $date = date("Y-m-d", strtotime("+" . (8 - date("N")) . " days"));
+
+        }
+
     }
     
-}
+} 
     
-$response = file_get_contents("https://schedule.zhrt.ru/getSchedule.php?group=" . $group . "&date=" . $date . "&day=" . mb_strtolower(date("l", strtotime($date))));
+    
+$response = file_get_contents("https://schedule.zhrt.ru/api.php?group=" . $group . "&date=" . $date . "&day=" . mb_strtolower(date("l", strtotime($date))));
         
 $response = json_decode($response, true);
-
 
 // изменения
 $group = mb_strtoupper($group);
@@ -2318,7 +2886,13 @@ if ($response["type"] == "change"){
     
     $splitter = '&#128280;';
 	
-    $schedule = "Изменения " . $group . " на " . getLongDate($date) . ":\n";
+    $schedule = "&#128681; Изменения " . $group . " на " . getLongDate($date) . ":\n";
+    
+    if (mb_substr($group, 0, 1) == "З"){
+        
+        $schedule = "Расписание заочного отделения, группа {$group} на " . getLongDate($date) . ":\n";
+        
+    }
     
     if ($response["first"] != ""){
      
@@ -2396,7 +2970,7 @@ if ($response["type"] == "change"){
 
     // основное
     
-	$schedule = "Без изменений ";
+	$schedule = "&#128681; Без изменений ";
 	
 	
     $schedule .= "на " . getLongDate($date) . ".\n\nОсновное расписание для " . $group . " (" . $response["week"] . " неделя - " . $daysofweek[mb_strtolower(date("l", strtotime($date)))] . "):\n";
@@ -2491,36 +3065,45 @@ if ($response["type"] == "change"){
         return 'Хмм... Что-то пошло не так. Код ошибки: WRONG_API_ANSWER ' . $response['type'];    
     
     }
-
+    
+    if($advices)
+        $schedule .= getAdvice(1, $group);
     
     return $schedule;
     
 }
 
-function getLongDate($date){
+function getAdvice($id, $group){
     
-     
-        $months = array( 1 => 'января' , 'февраля' , 'марта' , 'апреля' , 'мая' , 'июня' , 'июля' , 'августа' , 'сентября' , 'октября' , 'ноября' , 'декабря' );
-        $daysofweek = array("monday" => "понедельник",
-                        "tuesday" => "вторник",
-                        "wednesday" => "среда",
-                        "thursday" => "четверг",
-                        "friday" => "пятница",
-                       );
+    global $user_id;
+    
+    if ($group == null || $group == ""){
+        $group = "Д1Т1";
+    }
+    
+    if (!subscribe("checkSubscribed", $user_id, null) && !subscribe("checkSubscribing", $user_id, null)){
         
+        switch($id){
+            case 1:
+                return "\n\n&#10071; Я обратил внимание, что Вы всё ещё не подписаны на уведомления. Рекомендую сделать это, чтобы получать уведомления о новом расписании. К примеру, если хотите подписаться на группу " . mb_strtoupper($group) . ", напишите мне что-то вроде \"Подпиши меня на {$group}\"";
+                break;
+            case 2:
+                return "\n\n&#10071; Чтобы я смог написать Вам, когда расписание станет доступно, Вам следует подписаться на уведомления. Например, чтобы подписаться на группу " . mb_strtoupper($group) . ", следует написать что-то вроде \"Подпиши меня на " . mb_strtoupper($group) . ", дружище-бот\"";
+                break;
+        }
+    }
     
-    return date('d ' . $months[date( 'n', strtotime($date) )] . ' Y г.', strtotime($date));
-    
+    return '';
 }
 
 function getScheduleTeacher($date, $teacher, $r_case){
-            
     
     $holidays = getHolidays();
 
     $holidaysNames = getHolidaysNames();
         
-   switch ($date){
+    switch ($date){
+           
         case "today":
 			today:
             $date = date("Y-m-d");
@@ -2641,7 +3224,9 @@ function getScheduleTeacher($date, $teacher, $r_case){
                         "friday" => "пятница",
                        );
       
-    if (!checkSchedule($date, null)){
+    
+    
+    if (checkSchedule($date, null) == "false"){
 
     return "Изменения на " . getLongDate($date) . " пока что не были опубликованы."; 
 
@@ -2655,7 +3240,7 @@ function getScheduleTeacher($date, $teacher, $r_case){
     
 }
     
-    $response = file_get_contents("https://schedule.zhrt.ru/getSchedule.php?teacher=" . urlencode($teacher) . "&date=" . $date);
+    $response = file_get_contents("https://schedule.zhrt.ru/api.php?teacher=" . urlencode($teacher) . "&date=" . $date);
     
     $response = json_decode($response, true);
     
@@ -2732,10 +3317,475 @@ function getScheduleTeacher($date, $teacher, $r_case){
             
         }
         
+        if ($response["sixth"]) {
+            
+            $schedule .= "\n" . $splitter . "6 пара у " . $response["sixthG"] . " в " . $response["sixthC"] . " - " . $response["sixth"];
+            
+        }
+        
+        if ($response["sixthHalf"]) {
+            
+            $schedule .= "\n" . $splitter . "2 половина 6 пары у " . $response["sixthGHalf"] . " в " . $response["sixthCHalf"] . " - " . $response["sixthHalf"];
+            
+        }
+        
         return $schedule;
 
     }
 
+}
+
+// ADDING SCHEDULE
+//
+if ($_POST['function'] == "addSchedule"){
+    
+    function addSchedulePublished($date){
+        
+        $date = date("Y-m-d", strtotime($date));
+
+        global $db_host, $db_name, $db_username, $db_password;
+
+        $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Не могу подключиться:" . mysql_error());
+        // Подключение к DB
+        mysql_select_db($db_name, $connect_to_db)
+        or die();
+        mysql_query("SET NAMES utf8");
+        // Делаем SQL
+        $sql = "INSERT INTO schedule_published (date, post_link) VALUES ('{$date}', '{$_POST['url']}')";
+        @mysql_query($sql)
+            or die(mysql_error());
+            
+    }
+        
+	// удаляем кэш
+	
+	function removeDir($path){
+	if(file_exists($path) && is_dir($path))
+	{
+		$dirHandle = opendir($path);
+		while (false !== ($file = readdir($dirHandle))) 
+		{
+			if ($file!='.' && $file!='..') 
+			{
+				$tmpPath=$path.'/'.$file;
+				chmod($tmpPath, 0777);
+				
+				if (is_dir($tmpPath))
+	  			{  // если папка
+					RemoveDir($tmpPath);
+			   	} 
+	  			else 
+	  			{ 
+	  				if(file_exists($tmpPath))
+					{
+	  					unlink($tmpPath);
+					}
+	  			}
+			}
+		}
+		closedir($dirHandle);
+		if(file_exists($path))
+		{
+			rmdir($path);
+		}
+	}
+	else
+	{
+		
+	}
+
+	}
+
+    ///
+
+	$access = false;
+	
+if ($_POST['push'] == "true" || $_POST['mail'] == "true" || $_POST['vk_bot'] == "true"){
+	
+    global $db_host, $db_name, $db_username, $db_password;
+		
+    // Соединение
+    $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Не могу подключиться: " . mysql_error());
+    // Подключение к DB
+    mysql_select_db($db_name, $connect_to_db)
+    or die("Не могу выбрать базу данных:" . mysql_error());
+    mysql_query("SET NAMES utf8");
+    
+	// Выбираем все значения из таблицы
+        $qr_result = mysql_query("SELECT token FROM tokens")
+        or die(mysql_error());
+    
+    // Выводим значения
+    
+    while($data = mysql_fetch_array($qr_result))
+    {
+		$token = $data['token']; 
+    }
+		
+    // Закрываем соединение с DB
+        mysql_close($connect_to_db);	
+		
+	if ($token == $_POST['token']){
+		$access = true;
+	}
+		
+	}
+
+    if ($access
+//        && !$_POST['onlyme']
+       ){
+        
+        $filename = $_SERVER['DOCUMENT_ROOT'] . "/wp-content/cache/supercache/zhrt.ru/%d1%80%d0%b0%d1%81%d0%bf%d0%b8%d1%81%d0%b0%d0%bd%d0%b8%d0%b5";
+
+        removeDir($filename);
+
+        addSchedulePublished($_POST['date']);
+        
+    }
+		
+	if ($access && ($_POST['push'] == "true")){
+
+	if ($_POST['url']){
+		$url = $_POST['url'];
+	}else{
+		$url = 'https://zhrt.ru/';
+	}
+		
+	$content = $_POST['content'];
+	$ids = Array();
+		
+function POSTDevices(){ 
+  $app_id = "YOUR_ONESIGNAL_APP_ID_HERE";
+  $ch = curl_init(); 
+  curl_setopt($ch, CURLOPT_URL, "https://onesignal.com/api/v1/players?app_id=883f177f-8e35-4dcc-a070-538110174a07"); 
+  curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json', 
+                                             'Authorization: Basic ZjQ2MzMzMWQtZDU2YS00ZjcyLTgwYzgtMGZiOTA2ZmZjM2Q5')); 
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE); 
+  curl_setopt($ch, CURLOPT_HEADER, FALSE);
+  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+  $response = curl_exec($ch); 
+  curl_close($ch); 
+  return $response; 
+	}
+
+	$response = POSTDevices();
+    if (!$response){
+        echo '[BugReport] Ошибка при получении списка устройств для Push';
+    }else{
+	$data = json_decode($response, true);
+	$count = $data[total_count];
+	$_c = 0;
+		
+	while ($_c < $count){
+		$ids[$_c] = $data[players][$_c][id];
+		$_c++;
+	}
+		
+	$return["allresponses"] = $response;
+	$return = json_encode($return); 
+		
+		if ($_POST['onlyme'] == true){
+			$ids = array("c6b4671a-8f40-463f-995e-27582dbc95ca");
+		}
+		
+		$content = array(
+            "en" => $_POST["name"],
+            );
+
+        $fields = array(
+            'app_id' => "883f177f-8e35-4dcc-a070-538110174a07",
+            'include_player_ids' => $ids,
+			'url' => $url,
+			//array("c6b4671a-8f40-463f-995e-27582dbc95ca"),
+            'data' => array("foo" => "bar"),
+            'contents' => $content
+        );
+		
+        //print_r($fields);
+        
+        $fields = json_encode($fields);
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, "https://onesignal.com/api/v1/notifications");
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json; charset=utf-8',
+                                                   'Authorization: Basic ZjQ2MzMzMWQtZDU2YS00ZjcyLTgwYzgtMGZiOTA2ZmZjM2Q5'));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
+        curl_setopt($ch, CURLOPT_HEADER, FALSE);
+        curl_setopt($ch, CURLOPT_POST, TRUE);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $fields);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);
+
+        $response = curl_exec($ch);
+        curl_close($ch);
+        
+        if ($response == false){
+            echo '[BugReport] Ошибка при отправке Push';
+        }else{
+            echo 'Push=>Success';
+        }
+        
+        //return $response;
+        }
+    }
+
+    echo '|';
+    
+	if ($access && ($_POST['mail'] == "true")){
+		
+	global $db_host, $db_name, $db_username, $db_password;
+
+    $db_name = "b17587_main";
+        
+    $emailSuccess = true;
+		
+    // Соединение
+    $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Не могу подключиться:" . mysql_error());
+    // Подключение к DB
+    mysql_select_db($db_name, $connect_to_db)
+    or die("Не могу выбрать базу данных:" . mysql_error());
+    mysql_query("SET NAMES utf8");
+    
+	// Выбираем все значения из таблицы
+        $qr_result = mysql_query("SELECT * FROM `wp_es_emaillist` WHERE `es_email_status`='Confirmed'")
+        or die(mysql_error());
+    
+    // Выводим значения
+    
+	$emails = array();
+	$names = array();
+	$i = 0;
+		
+    while($data = mysql_fetch_array($qr_result))
+    {
+		$names[$i] = $data['es_email_name'];
+		$emails[$i] = $data['es_email_mail'];
+		$i++;
+    }
+		
+	if ($_POST['onlyme'] == true){
+		$names = array("Братишкааа");
+		$emails = array("mr.anomalyy@gmail.com");
+	}
+		
+	$subject = "Уведомление о расписании";
+		
+	if (!empty($_POST['name'])){
+		 $subject = $subject . " - " . $_POST['name'];
+	}
+		
+	$i = 0;
+		
+	while ($i < count($emails)){	
+		
+	$to  = "<" . $emails[$i] . ">, " ; 
+	$to .= $emails[$i];
+		
+	if ($names[$i] == ''){
+		$currName = $emails[$i];
+	}else{
+		$currName = $names[$i];
+	}
+		
+	switch ($_POST['mailTemplate']){
+		case 0:
+			
+			$message = "Здравствуйте, " . $currName . ". <br><br>
+		
+
+		Новое расписание было опубликовано на сайте";
+			
+		if (!empty($_POST['name'])){
+			$message .= ": " . $_POST['name'] . "";
+		}
+			
+		if (!empty($_POST['url'])){
+		
+		$message = $message . "<br>
+		Вы можете:<br>
+		
+		<a href=\"" . $_POST['url'] . "\"><br>Открыть это расписание</a><br>";
+			
+		}
+		$message = $message . "
+		<br><a href=\"http://zhrt.ru/расписание\">Просмотреть страницу расписания занятий</a>
+		<br><br><hr>
+		Вы получили это письмо, потому что подписаны на рассылку.<br>
+		<i>
+		Спасибо за то, что Вы с нами!<br>
+		Администрация сайта</i>";
+			
+			break;
+		default:
+			die("[BugReport] Ошибка при выборе шаблона сообщения");
+		break;
+	}
+	
+	
+
+    $headers  = "Content-type: text/html; charset=utf-8 \r\n"; 
+    $headers .= "From: ЖГК <no-reply@zhrt.ru>\r\n"; 
+    $headers .= "Reply-To: admin@zhrt.ru\r\n"; 
+		
+    $result = mail($to, $subject, $message, $headers);
+		
+	if (!$result){
+        $emailSuccess = false;
+		echo '[BugReport] Возникла ошибка при отправке E-Mail по адресату: ' . $names[$i] . ' <' . $emails[$i] . '><br>';
+	}
+		$i++;
+		
+	}	
+		
+    // Закрываем соединение с DB
+        mysql_close($connect_to_db);	
+		
+        $db_name = $config->db["table"];
+        
+        if ($emailSuccess){
+            echo 'Email=>Success';
+        }
+        
+	}
+
+	echo '|';
+
+	if ($access && ($_POST['vk_bot'] == "true")){
+		
+        global $db_host, $db_name, $db_username, $db_password;
+
+        $vk_bot_error = false;
+        
+        $Answers = getAnswers("");
+        
+        $config = new config();
+
+        //Строка для подтверждения адреса сервера из настроек Callback API
+        $confirmationToken = $config->vk_bot['confirmation'];
+        //Ключ доступа сообщества
+        $token = $config->vk_bot['token'];
+        // Secret key
+        $secretKey = $config->vk_bot['secret'];
+
+        $ids = array();
+        $chats = array();
+
+        // получаем подписчиков
+        $connect_to_db = @mysql_connect($db_host, $db_username, $db_password) or die("Не могу подключиться:" . mysql_error());
+        // Подключение к DB
+        mysql_select_db($db_name, $connect_to_db)
+        or die();
+        mysql_query("SET NAMES utf8");
+        // Делаем SQL
+        $sql = "SELECT * FROM vk_bot_users WHERE status='subscribed';";
+        $results = mysql_query($sql)
+            or die(mysql_error());
+
+        $i = 0;
+
+        while($data = mysql_fetch_array($results)){
+            $ids[$i] = $data["VK_ID"];
+            $i++;
+        }
+
+        // Делаем SQL
+        $sql = "SELECT * FROM vk_bot_chats WHERE status='true';";
+        $results = mysql_query($sql)
+            or die(mysql_error());
+
+        $i = 0;
+
+        while($data = mysql_fetch_array($results)){
+            $chats[$i] = $data["chat_id"];
+            $i++;
+        }
+
+         if ($_POST['onlyme'] == true){
+
+             $ids = array("156152406");
+             $chats = array("3");
+
+         }
+
+         for($i = 0; $i < count($ids); $i++){
+
+         //затем с помощью users.get получаем данные об авторе
+            $userInfo = json_decode(file_get_contents("https://api.vk.com/method/users.get?user_ids={$ids[$i]}&v=5.0&access_token=" . $token));
+            $userInfo = $userInfo->response[0];
+            //и извлекаем из ответа его имя
+            $user_name = $userInfo->first_name;
+
+         if (isset($_POST['vkmessage']) && $_POST['vkmessage'] != ""){
+             $message = str_replace(
+                 array( // what need to replace
+                            "@USERNAME",
+                            "@LASTNAME",
+                          ), 
+                 array( // what place instead
+                            $userInfo->first_name,
+                            $userInfo->last_name,
+                           ), $_POST['vkmessage']);
+         }else{
+
+            if (date("N") != 5){		 
+
+                $message = "Привет, " . $user_name . "! Я узнал об изменениях на завтра! Пиши!";
+
+            }else{
+
+                $message = "Привет, " . $user_name . "! Я узнал об изменениях на " . $_POST['name'] . "! Пиши!";
+
+            }
+
+            // here can be hot.
+
+            $group = subscribe("getGroup", $ids[$i], null);
+
+            if ($group)         
+                $message = getSchedule($group, $_POST['date'], true);
+
+         }
+
+         //С помощью messages.send и токена сообщества отправляем ответное сообщение
+            $request_params = array(
+                'message' => "$message",
+                'user_id' => $ids[$i],
+                'random_id' => mt_rand(15, 200000),
+                'access_token' => $token,
+                'read_state' => 1,
+                'v' => '5.84'
+            );
+            $get_params = http_build_query($request_params);
+            file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);
+
+         }
+
+         for ($i = 0; $i < count($chats); $i++){
+
+            $message = "Привет, беседа! Новое расписание доступно! Спрашивайте! ";
+
+            $group = subscribe("getChatGroup", $chats[$i], 'Братииишкааа, я тебе покушать принёс.');
+
+            if ($group)
+                $message = "&#10071;" . $Answers["schedule"]["new"][rand(0, count($Answers["schedule"]["new"]) - 1)] . "\n\n" . getSchedule($group, $_POST['date'], false);
+
+            //С помощью messages.send и токена сообщества отправляем ответное сообщение
+            $request_params = array(
+                'message' => "$message",
+                'chat_id' => $chats[$i],
+                'access_token' => $token,
+                'read_state' => 1,
+                'random_id' => mt_rand(15, 200000),
+                'v' => '5.84'
+            );
+            $get_params = http_build_query($request_params);
+
+            file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);         
+
+         }
+
+         echo 'vk_bot=>Success';
+		
+	}
 }
 
 ?>

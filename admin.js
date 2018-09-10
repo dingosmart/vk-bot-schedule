@@ -635,6 +635,11 @@ var message = {
         switch (message.mode) {
 
             case 'all':
+                
+                var url = "https://bot.zhrt.ru/bot.php?send=true&groupsCount=all";
+                sendPOST(url, "text=" + document.getElementById('sendMessageText').value + "&token=" + getCookie('token'), function (result) {
+                console.log(result);
+                });
                 break;
             case 'by_group':
 
@@ -654,7 +659,7 @@ var message = {
 
                 console.log(url);
 
-                sendPOST(url, "token=" + getCookie('token'), function (result) {
+                sendPOST(url, "text=" + document.getElementById('sendMessageText').value + "&token=" + getCookie('token'), function (result) {
                     console.log(result);
                 });
 

@@ -759,7 +759,7 @@ body {
     background: rgba(190, 190, 190, 0.5);
     border: 2px black solid;
     padding: 0.5%;
-    margin: 2%;
+    margin: 0.3%;
     border-radius: 4px;
     box-shadow: 5px 5px 6px rgba(0, 0, 0, 0.5);
     transition-duration: 0.4s;
@@ -773,6 +773,12 @@ body {
     width: 30%;
     align-items: center;
 
+}
+
+@media screen and (min-width: 600px){
+    .mainframe .analytics .info .line {
+        margin: 2%;
+    }
 }
 
 .mainframe .analytics .info .line .value {
