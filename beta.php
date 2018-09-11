@@ -1,35 +1,68 @@
 <?php
 
-/*
+class Keyboard {
+    
+    function __construct (){
+        $this->one_time = true;
+        $this->buttons = [];
+    }
+    
+    function addBtn($label, $payload, $color){
+        
+        switch($color){
+            case "white":
+                $color = "default";
+                break;
+            case "red":
+                $color = "negative";
+                break;
+            case "green":
+                $color = "positive";
+                break;
+            case "blue":
+                $color = "primary";
+                break;
+            default:
+                $color = "default";
+                break;
+        }
+        
+        $this->buttons[count($this->buttons)] = [
+            
+            ["action" => [
+                "type" => "text",
+                "payload" => "{\"button\": \"{$payload}\"}",
+                "label" => $label
+            ],
 
-KEYBOARD TEMPLATE FOR FUTURE
+            "color" => $color
+            
+            ]
+            
+        ];
+    }
+    
+    function getCount(){
+        return count($this->buttons);
+    }
+    
+    function clearBtns(){
+        $this->buttons = [];
+    }
+    
+    function setOneTime($status){
+        $this->one_time = $status;
+    }
+    
+    function get(){
+                
+        return json_encode($this, JSON_UNESCAPED_UNICODE);
+        
+    }
+    
+}
 
-$keyboard = [
-           "one_time" => false,
-           "buttons" => [[
-
-               ["action" => [
-                 "type" => "text",
-                 "payload" => "{\"button\": \"1\"}",
-                 "label" => "first button",
-                ],
-                "color" => "default",
-                ],
-               ],
-
-               [["action" => [
-                 "type" => "text",
-                 "payload" => "{\"button\": \"2\"}",
-                 "label" => "second button",
-                ],
-                "color" => "primary",
-                ],
-                ]
-
-               ],
-         ];  
-
-*/
+$keyboard = new Keyboard();
 
 ini_set('date.timezone', 'Europe/Samara');
 
@@ -335,36 +368,14 @@ switch ($data->type) {
             $answer = getAnswer($message, $_message, $userId, $user_name, false, $chat_id);
             
 		}
-        
-        
-//         $keyboard = [
-//           "one_time" => false,
-//           "buttons" => [[
-//
-//               ["action" => [
-//                 "type" => "text",
-//                 "payload" => "{\"button\": \"1\"}",
-//                 "label" => "first button",
-//                ],
-//                "color" => "default",
-//                ],
-//               ],
-//
-//               [["action" => [
-//                 "type" => "text",
-//                 "payload" => "{\"button\": \"2\"}",
-//                 "label" => "second button",
-//                ],
-//                "color" => "primary",
-//                ],
-//                ]
-//
-//               ],
-//         ];        
+               
 
         if ($answer == "" || $answer == null)
             $answer = getAnswers($user_name)['default'][rand(0, count(getAnswers($user_name)))];
-                
+       
+       if ($keyboard->getCount() == 0)
+       $keyboard->addBtn("Пары", 0, "green");
+        
         //С помощью messages.send и токена сообщества отправляем ответное сообщение
         $request_params = array(
 //            'message' => "{$user_name}, это неизвестная команда.",
@@ -373,14 +384,18 @@ switch ($data->type) {
             'random_id' => mt_rand(15, 200000),
             'access_token' => $token,
             'read_state' => 1,
-//            'keyboard' => json_encode($keyboard),
+            'keyboard' => $keyboard->get(),
             'v' => '5.84'
         );
         
         if ($chat_id != "false"){
-            
             $request_params['chat_id'] = $chat_id;
             unset($request_params['user_id']);
+            $keyboard->clearBtns();
+            $keyboard->addBtn("Пары сегодня", 0, "white");
+            $keyboard->addBtn("Пары завтра", 0, "white");
+            $keyboard->setOneTime(false);
+            $request_params['keyboard'] = $keyboard->get();
                
         }
         
@@ -1588,7 +1603,7 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
             
             if ($group){
                 
-                return getSchedule($group, $scheduleDate, false);
+                return getSchedule($group, $scheduleDate, true);
             
             }else if ($teacher){
                 
@@ -1782,7 +1797,7 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                     }
                 
                 
-                    return getSchedule($group, $scheduleDate, false);
+                    return getSchedule($group, $scheduleDate, true);
                 
             };
         break;
@@ -3066,7 +3081,7 @@ if ($response["type"] == "change"){
     
     }
     
-    if($advices)
+    if ($advices)
         $schedule .= getAdvice(1, $group);
     
     return $schedule;
@@ -3676,7 +3691,7 @@ function POSTDevices(){
         or die();
         mysql_query("SET NAMES utf8");
         // Делаем SQL
-        $sql = "SELECT * FROM vk_bot_users WHERE status='subscribed';";
+        $sql = "SELECT * FROM vk_bot_users WHERE status='subscribed' OR status='subscribing';";
         $results = mysql_query($sql)
             or die(mysql_error());
 
@@ -3740,10 +3755,11 @@ function POSTDevices(){
 
             $group = subscribe("getGroup", $ids[$i], null);
 
-            if ($group)         
-                $message = getSchedule($group, $_POST['date'], true);
+            if ($group)  
+                
+                $message = getSchedule($group, $_POST['date'], false);
 
-         }
+            }
 
          //С помощью messages.send и токена сообщества отправляем ответное сообщение
             $request_params = array(
