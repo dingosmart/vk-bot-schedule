@@ -160,6 +160,10 @@ if ((isset($_GET['send'])) && isset($_GET['groupsCount'])){
     if ($_GET['groupsCount'] != 'all')    
         $sql .= ")";
     
+    if ($_GET['groupsCount'] == "teachers"){
+        $sql = "SELECT * FROM vk_bot_users WHERE (status='subscribed' OR status='subscribing') AND teacher != 'NULL'";   
+    }
+    
     if ($_GET['groupsCount'] == "zaoch"){
         $sql = "SELECT * FROM vk_bot_users WHERE (status='subscribed' OR status='subscribing') AND studgroup LIKE 'З%'";
     }
@@ -208,13 +212,27 @@ if ((isset($_GET['send'])) && isset($_GET['groupsCount'])){
             'user_id' => $ids[$i],
             'access_token' => $token,
             'read_state' => 1,
-            'v' => '5.0'
+            'v' => '5.84'
         );
         $get_params = http_build_query($request_params);
 
         file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);
      }
     echo 'ok';
+    
+}
+
+function splitString($string, $splitevery){
+    
+    $r = [];
+    $c = 0;
+    
+    for($i = 0; $i < iconv_strlen($string); $i){
+        $r[$c++] = mb_substr($string, $i, $i + $splitevery);
+        $i += $splitevery;
+    }
+    
+    return $r;
     
 }
 
@@ -373,27 +391,76 @@ switch ($data->type) {
         if ($answer == "" || $answer == null)
             $answer = getAnswers($user_name)['default'][rand(0, count(getAnswers($user_name)))];
        
-       if ($keyboard->getCount() == 0)
-       $keyboard->addBtn("Пары", 0, "green");
+        if (!is_array($answer)){
+            if (iconv_strlen($answer) > 550){
+                $answer = splitString($answer, 550);
+            }
+        }
         
+        if (count($answer) > 1){
+            
+            for ($i = 0; $i < count($answer); $i++){
+                $request_params = array(
+                    'message' => "{$answer[$i]}",
+                    'user_id' => $data->object->from_id,
+                    'random_id' => mt_rand(15, 200000),
+                    'read_state' => 1,
+                    'v' => '5.84',
+                    'access_token' => $token,
+                    );
+                
+                $get_params = http_build_query($request_params);
+                
+                $result = file_get_contents('https://api.vk.com/method/messages.send?' . $get_params);
+                saveToLog($userId, $chat_id, $message, $answer[$i], $result);
+                
+                if ($i == count($answer) - 1)
+                    $answer = $answer[count($answer)];
+                
+            }
+            
+        }
+       
         //С помощью messages.send и токена сообщества отправляем ответное сообщение
         $request_params = array(
 //            'message' => "{$user_name}, это неизвестная команда.",
             'message' => "{$answer}",
             'user_id' => $data->object->from_id,
             'random_id' => mt_rand(15, 200000),
-            'access_token' => $token,
             'read_state' => 1,
             'keyboard' => $keyboard->get(),
-            'v' => '5.84'
+            'v' => '5.84',
+            'access_token' => $token,
         );
+        
+        if ($keyboard->getCount() == 0){
+        
+            $keyboard->addBtn("Пары вчера", 0, "white");
+            $keyboard->addBtn("Пары сегодня", 0, "green");
+            
+            if(date("N") < 5)
+            $keyboard->addBtn("Пары завтра", 0, "white");
+            
+            if(date("N") >= 5)
+            $keyboard->addBtn("Пары в понедельник", 0, "white");
+            
+            
+            $keyboard->addBtn("Звонки", 0, "white");
+            $request_params['keyboard'] = $keyboard->get(); 
+            
+        }
         
         if ($chat_id != "false"){
             $request_params['chat_id'] = $chat_id;
             unset($request_params['user_id']);
             $keyboard->clearBtns();
-            $keyboard->addBtn("Пары сегодня", 0, "white");
+            
+            if(date("N") < 5)
             $keyboard->addBtn("Пары завтра", 0, "white");
+            
+            if(date("N") >= 5)
+            $keyboard->addBtn("Пары в понедельник", 0, "white");
+            
             $keyboard->setOneTime(false);
             $request_params['keyboard'] = $keyboard->get();
                
@@ -1386,7 +1453,12 @@ function getAnswer($message, $_message, $userId, $userName, $is_attachment){
                     $teacher = $message[$i];
                     $i = count($message);            
                     sendAnalytics("subscribeTeacher", $userId, $_message, $chat_id);
-
+                }
+                
+                if (in_array($message[$i], $Words["teachers"]["names"]["r_case_lastnames"])){
+                    $teacher = $Words['teachers']['names']['fullnames'][getTeacher($message[$i], $Words['teachers']['names']['r_case_lastnames'], true)];
+                    $i = count($message);            
+                    sendAnalytics("subscribeTeacher", $userId, $_message, $chat_id);
                 }
                 
                 if (in_array($message[$i], $Words["chat"]) && $chat_id != "false") {
@@ -2176,7 +2248,7 @@ function getHelpMessage($username){
     '' . $splitter . '1. Подписка на уведомления об изменениях - как только я узнаю изменения в расписании, я могу написать тебе об этом, если ты заранее попросишь. Сделать это очень легко, достаточно написать мне что-то вроде: 
     "Подпиши меня на уведомления!", а затем, сказать мне свою группу. Впрочем, тебе ничего не мешает сразу написать мне "Подпиши меня на уведомления Д4ПО1!" (заменить на название своей группы). В таком случае, я сразу всё пойму.
     ' . $splitter . '2. Расписание на вчера/сегодня/завтра/послезавтра - я могу быстро сказать тебе расписание на вчерашний, сегодняшний, либо завтрашний день. 
-    Для этого нужно всего лишь написать что-то вроде "Пары вчера", либо "Расписание", либо "Какие завтра пары, приятель?". Ну, если не хотите, то можно и без "приятеля".'
+    Для этого нужно всего лишь написать что-то вроде "Пары вчера", либо "Расписание", либо "Какие завтра пары, приятель?". Ну, если не хотите, то можно и без "приятеля". Также, можно писать число и название месяца. Например, "Пары 3 сентября".'
                  , 
     '' . $splitter . '3. Расписание для учителей - все Ваши пары на вчера/сегодня/завтра(см. 2 пункт) с помощью команды в духе "пары у Иванова"
     ' . $splitter . '4. Подписка на уведомления для учителей - как только я узнаю изменения в расписании, я могу написать Вам об этом, если Вы заранее попросите. Сделать это очень легко, достаточно написать мне что-то вроде: 
@@ -2550,24 +2622,15 @@ function getTeachersArray(){
 function getTeacher($name, $fullnames, $r_case){
     
     for ($i = 0; $i < count($fullnames); $i++){
-        
-        if (!(strpos(mb_strtolower($fullnames[$i]), $name) === false)){
-            
-            if ($r_case){
-             
+        if (!(strpos(mb_strtolower($fullnames[$i]), mb_strtolower($name)) === false)){
+                         
             return $i;
-                
-            }else{
-            
-            return $i;
-                
-            }
-            
+                        
         }
         
     }
     
-//    return $name;
+    return false;
     
 }
 
@@ -2672,6 +2735,9 @@ function getScheduleList($group){
         for ($i = 0; $i < count($response["schedules"]); $i++){
             
             $answer .= $splitter . getLongDayMonth($response["schedules"][$i]) . "\n";
+            
+            global $keyboard;
+            $keyboard->addBtn("Пары на " . getLongDayMonth($response["schedules"][$i]), 0, "white");
             
         }
         
@@ -2869,7 +2935,11 @@ if (mb_substr($group, 0, 1) == "З" &&
 
     $cr = checkSchedule($date, $group);
 
-    if ($cr == "false"){
+    global $user_id;
+    
+    if ($cr == "false" 
+//        && $user_id != '156152406'
+       ){
 
     return "&#128681; Изменения на " . getLongDate($date) . " пока что не были опубликованы. " . getAdvice(2, $group); 
 
@@ -2890,10 +2960,12 @@ if (mb_substr($group, 0, 1) == "З" &&
 } 
     
     
-$response = file_get_contents("https://schedule.zhrt.ru/api.php?group=" . $group . "&date=" . $date . "&day=" . mb_strtolower(date("l", strtotime($date))));
-        
+$response = file_get_contents("https://schedule.zhrt.ru/api.php?group=" . $group . "&date=" . $date);
+       
+//print_r($response);
+    
 $response = json_decode($response, true);
-
+    
 // изменения
 $group = mb_strtoupper($group);
     
@@ -2905,7 +2977,7 @@ if ($response["type"] == "change"){
     
     if (mb_substr($group, 0, 1) == "З"){
         
-        $schedule = "Расписание заочного отделения, группа {$group} на " . getLongDate($date) . ":\n";
+        $schedule = "&#128681; Расписание заочного отделения, группа {$group} на " . getLongDate($date) . ":\n";
         
     }
     
@@ -2986,7 +3058,8 @@ if ($response["type"] == "change"){
     // основное
     
 	$schedule = "&#128681; Без изменений ";
-	
+    
+	$splitter = '&#128280;';
 	
     $schedule .= "на " . getLongDate($date) . ".\n\nОсновное расписание для " . $group . " (" . $response["week"] . " неделя - " . $daysofweek[mb_strtolower(date("l", strtotime($date)))] . "):\n";
     
@@ -3090,22 +3163,35 @@ if ($response["type"] == "change"){
 
 function getAdvice($id, $group){
     
-    global $user_id;
-    
-    if ($group == null || $group == ""){
-        $group = "Д1Т1";
-    }
+    global $user_id, $keyboard;
     
     if (!subscribe("checkSubscribed", $user_id, null) && !subscribe("checkSubscribing", $user_id, null)){
-        
-        switch($id){
-            case 1:
-                return "\n\n&#10071; Я обратил внимание, что Вы всё ещё не подписаны на уведомления. Рекомендую сделать это, чтобы получать уведомления о новом расписании. К примеру, если хотите подписаться на группу " . mb_strtoupper($group) . ", напишите мне что-то вроде \"Подпиши меня на {$group}\"";
-                break;
-            case 2:
-                return "\n\n&#10071; Чтобы я смог написать Вам, когда расписание станет доступно, Вам следует подписаться на уведомления. Например, чтобы подписаться на группу " . mb_strtoupper($group) . ", следует написать что-то вроде \"Подпиши меня на " . mb_strtoupper($group) . ", дружище-бот\"";
-                break;
+    
+        if ($group == null || $group == "" && ($id < 3)){
+            $group = "Д1Т1";
+            $defaultGroup = true;
         }
+
+            switch($id){
+                case 1:
+                    if (!$defaultGroup)
+                    $keyboard->addBtn("Подпиши меня на группу " . mb_strtoupper($group), 0, "green");
+                    
+                    return "\n\n&#10071; Я обратил внимание, что Вы всё ещё не подписаны на уведомления. Рекомендую сделать это, чтобы получать уведомления о новом расписании. К примеру, если хотите подписаться на группу " . mb_strtoupper($group) . ", напишите мне что-то вроде \"Подпиши меня на {$group}\"";
+                    break;
+                case 2:
+                    if(!$defaultGroup)
+                    $keyboard->addBtn("Подпиши меня на группу " . mb_strtoupper($group), 0, "green");
+                    
+                    return "\n\n&#10071; Чтобы я смог написать Вам, когда расписание станет доступно, Вам следует подписаться на уведомления. Например, чтобы подписаться на группу " . mb_strtoupper($group) . ", следует написать что-то вроде \"Подпиши меня на " . mb_strtoupper($group) . ", дружище-бот\"";
+                    break;
+                case 3:
+                    if(!$defaultGroup)
+                    $keyboard->addBtn("Подпиши меня на пары " . $group, 0, "green");
+                    
+                    return "\n\n&#10071; Чтобы я смог написать Вам, когда расписание станет доступно, Вам следует подписаться на уведомления. Например, чтобы подписаться на пары " . $group . ", следует написать что-то вроде \"Подпиши меня на " . $group . ", бот\"";
+                    break;
+            }
     }
     
     return '';
@@ -3240,10 +3326,16 @@ function getScheduleTeacher($date, $teacher, $r_case){
                        );
       
     
+    global $user_id;
     
-    if (checkSchedule($date, null) == "false"){
+//    if ($user_id != '156152406')
+//        return "&#128681; К сожалению, сервис временно недоступен для учителей. Просим воспользоваться нашим сайтом: https://zhrt.ru/расписание. Это временные трудности. В ближайшее время всё заработает";
+    
+    if (checkSchedule($date, null) == "false"
+//        && $user_id != '156152406'
+       ){
 
-    return "Изменения на " . getLongDate($date) . " пока что не были опубликованы."; 
+    return "&#128681; Изменения на " . getLongDate($date) . " пока что не были опубликованы."; 
 
 }else{
     
@@ -3263,12 +3355,12 @@ function getScheduleTeacher($date, $teacher, $r_case){
 
     if ($response["type"] == "emptyTeacher"){
         
-        return "Пусто! У " . $r_case . " на " . date('d ' . $months[date( 'n', strtotime($date) )] . ' Y г.', strtotime($date)) . " нету занятий!";
+        return "&#128681; Пусто! У " . $r_case . " на " . date('d ' . $months[date( 'n', strtotime($date) )] . ' Y г.', strtotime($date)) . " нету занятий!";
 
     }else if ($response["type"] == "teacher"){
         
         
-        $schedule = "Пары у " . $r_case . " на " . date('d ' . $months[date( 'n', strtotime($date) )] . ' Yг', strtotime($date)) . ":\n";
+        $schedule = "&#128681; Пары у " . $r_case . " на " . date('d ' . $months[date( 'n', strtotime($date) )] . ' Yг', strtotime($date)) . ":\n";
         
         $splitter = '&#128280;';
         
@@ -3344,6 +3436,8 @@ function getScheduleTeacher($date, $teacher, $r_case){
             
         }
         
+        $schedule .= getAdvice(3, $r_case);
+        
         return $schedule;
 
     }
@@ -3355,6 +3449,9 @@ function getScheduleTeacher($date, $teacher, $r_case){
 if ($_POST['function'] == "addSchedule"){
     
     function addSchedulePublished($date){
+        
+        if ($_POST['onlyme'] == true)
+            return false;
         
         $date = date("Y-m-d", strtotime($date));
 
@@ -3720,6 +3817,16 @@ function POSTDevices(){
              $chats = array("3");
 
          }
+        
+         $keyboard = new Keyboard();
+         if (date("N") < 5)
+         $keyboard->addBtn("Пары завтра", 0, "green");
+        
+         if (date("N") >= 5)
+         $keyboard->addBtn("Пары в понедельник", 0, "green");
+        
+         $keyboard->addBtn("Пары сегодня", 0, "white");
+        
 
          for($i = 0; $i < count($ids); $i++){
 
@@ -3753,11 +3860,11 @@ function POSTDevices(){
 
             // here can be hot.
 
-            $group = subscribe("getGroup", $ids[$i], null);
-
-            if ($group)  
-                
-                $message = getSchedule($group, $_POST['date'], false);
+//            $group = subscribe("getGroup", $ids[$i], null);
+//
+//            if ($group)  
+//                
+//                $message = getSchedule($group, $_POST['date'], false);
 
             }
 
@@ -3767,6 +3874,7 @@ function POSTDevices(){
                 'user_id' => $ids[$i],
                 'random_id' => mt_rand(15, 200000),
                 'access_token' => $token,
+                'keyboard' => $keyboard->get(),
                 'read_state' => 1,
                 'v' => '5.84'
             );
@@ -3789,6 +3897,7 @@ function POSTDevices(){
                 'message' => "$message",
                 'chat_id' => $chats[$i],
                 'access_token' => $token,
+                'keyboard' => $keyboard->get(),
                 'read_state' => 1,
                 'random_id' => mt_rand(15, 200000),
                 'v' => '5.84'

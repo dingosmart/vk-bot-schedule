@@ -656,6 +656,10 @@ var message = {
                     url += "&teachers=true";
 
                 }
+                
+                if (message.chooseGroups.count == 0 && message.chooseGroups.toTeachers){
+                    url = "https://bot.zhrt.ru/bot.php?send=true&groupsCount=teachers";
+                }
 
                 console.log(url);
 
