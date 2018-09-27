@@ -139,7 +139,7 @@ var news = {
 
             var text_field = document.createElement('textarea');
 
-            text_field.innerHTML = text.innerHTML;
+            text_field.innerHTML = text.innerHTML.replace(/<br\s*[\/]?>/gi, "\n");
             text_field.id = 'text_field-' + id;
             text_field.rows = '6';
 

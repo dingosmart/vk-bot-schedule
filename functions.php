@@ -1,5 +1,7 @@
 <?php
 
+    header('Access-Control-Allow-Origin: https://schedule.zhrt.ru');
+
     require 'config.php';
 
     $config = new config();
@@ -348,6 +350,56 @@
             }
             
             break;
+            
+        case 'isTeacher':
+            
+            if (substr($_GET['teacher'], -1) != '.'){
+                $_GET['teacher'] .= ".";
+            }
+            
+            $sql = "SELECT * FROM teachers WHERE name='{$_GET['teacher']}'";
+            
+            $results = @mysql_query($sql)
+                or die(mysql_error());
+
+            $i = 0;
+            
+            while($data = mysql_fetch_array($results)){
+                $i++;
+            }
+            
+            if ($i > 0){
+                echo 'true';
+            }else{
+                echo 'false';
+            }
+            
+        break; 
+        
+        case 'getTeacherRcase':
+            
+            if (substr($_GET['teacher'], -1) != '.'){
+                $_GET['teacher'] .= ".";
+            }
+            
+            $sql = "SELECT * FROM teachers WHERE name='{$_GET['teacher']}'";
+            
+            $results = @mysql_query($sql)
+                or die(mysql_error());
+
+            $rcase = false;
+            
+            while($data = mysql_fetch_array($results)){
+                $rcase = $data["r_case"];
+            }
+            
+            if ($rcase){
+                echo $rcase;
+            }else{
+                echo 'false';
+            }
+            
+        break;
             
         case 'auth':
             

@@ -33,7 +33,7 @@ function printNews(){
     
     for ($i = 0; $i < count($news["title"]); $i++){
         
-        echo '<div class="message" id="message-' . $news["ids"][$i] . '"><div class="buttons"><div class="edit" id="edit-' . $news["ids"][$i] . '" onClick="news.edit(\'' . $news["ids"][$i] . '\');"></div><div class="delete" id="delete-' . $news["ids"][$i] . '" onClick="news.delete(\'' . $news["ids"][$i] . '\');"></div></div><div class="title" id="title-' . $news["ids"][$i] . '">' . $news["title"][$i] . '</div><div class="text" id="text-' . $news["ids"][$i] . '">' . $news["message"][$i] . '</div><div class="date" id="date-' . $news["ids"][$i] . '">' . $news["date"][$i] . '</div></div>';
+        echo '<div class="message" id="message-' . $news["ids"][$i] . '"><div class="buttons"><div class="edit" id="edit-' . $news["ids"][$i] . '" onClick="news.edit(\'' . $news["ids"][$i] . '\');"></div><div class="delete" id="delete-' . $news["ids"][$i] . '" onClick="news.delete(\'' . $news["ids"][$i] . '\');"></div></div><div class="title" id="title-' . $news["ids"][$i] . '">' . $news["title"][$i] . '</div><div class="text" id="text-' . $news["ids"][$i] . '">' . nl2br($news["message"][$i]) . '</div><div class="date" id="date-' . $news["ids"][$i] . '">' . $news["date"][$i] . '</div></div>';
         
     }
 }

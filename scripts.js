@@ -134,11 +134,7 @@ function updateNews(){
         
       newsBlock.innerHTML = '<div class="logo">Новости бота</div>';
         
-      console.log(result);
-        
       for (i = 0; i < result['title'].length; i++){
-          
-          console.log(result['ids'][i]);
           
           var newNew = document.createElement('div');
           newNew.id = 'message-' + result['ids'][i];
@@ -163,7 +159,7 @@ function updateNews(){
           var text = document.createElement('div');
           text.id = 'text-' + result['ids'][i];
           text.className = "text";
-          text.innerHTML = result['message'][i];
+          text.innerHTML = result['message'][i].replace(/(\n)+/g, '<br />');
           newNew.appendChild(text);
           
           var date = document.createElement('div');
